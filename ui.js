@@ -481,6 +481,7 @@ const UI = (() => {
       toast(`「${r.program.title}」 개설! 다음 달부터 운영됩니다.`, 'ok');
       closeModal();
       Sim.save(); refresh(); rerenderPanel();
+      if (r.missionCompleted) setTimeout(() => showMissionComplete(r.program), 200);
     };
     setTimeout(() => $('#pfTitle').focus(), 60);
   }
@@ -1161,6 +1162,46 @@ const UI = (() => {
     $('#biDemolish').onclick = () => { closeModal(); hooks.demolish(instId); };
   }
 
+  /* ---------- 민가 ---------- */
+  function openHouseInfo(x, z) {
+    showModal(`
+      <h2>🏠 원래 살던 주민의 집</h2>
+      <p class="lead">이 자리는 마을이 생기기 전부터 살아온 주민의 집입니다. 철거할 수는 없지만,
+        우리 땅 안의 다른 빈 자리로 이사를 보낼 수는 있습니다.</p>
+      <div class="modal-actions">
+        <button class="btn ghostb" onclick="UI.closeModal()">닫기</button>
+        <button class="btn primary" id="hiMove">🚚 이사 보내기</button>
+      </div>
+    `);
+    $('#hiMove').onclick = () => { closeModal(); hooks.startMoveHouse(x, z); };
+  }
+
+  /* ---------- 미션 ---------- */
+  function showMissionStart() {
+    showModal(`
+      <h2>🎪 [미션] 다 함께 어울리는 마을</h2>
+      <p class="lead">주민커뮤니티센터가 문을 열었습니다! 이곳을 무대로 <b>모든 주민</b>이 함께 어울릴 수 있는
+        프로그램을 기획해 보세요. 어르신이 살던 곳에서 오래오래 지낼 수 있도록(AIP · Aging In Place)
+        이웃이 함께 살피는 공동케어회의도 이곳에서 열립니다.</p>
+      <p class="muted">힌트: 프로그램 대상을 <b>전체 주민</b>으로, 운영 시설을 <b>주민커뮤니티센터</b>로 고르고,
+        제목이나 설명에 '공동체·이웃·마을·축제·나눔' 같은 말을 넣어 보세요.</p>
+      <div class="modal-actions">
+        <button class="btn primary" onclick="UI.closeModal()">알겠습니다</button>
+      </div>
+    `);
+  }
+
+  function showMissionComplete(program) {
+    showModal(`
+      <h2>🏆 미션 완료!</h2>
+      <p class="lead">「${esc(program.title)}」 프로그램으로 지역주민이 함께 어울리는 마을을 만들었습니다!
+        공동케어회의를 통한 AIP 방안까지 마련되어 특별교부금 <b>${fmt(3e8)}</b>이 지급되었습니다.</p>
+      <div class="modal-actions">
+        <button class="btn primary" onclick="UI.closeModal()">좋아요!</button>
+      </div>
+    `);
+  }
+
   /* ---------- 인트로 / 승리 / 메뉴 ---------- */
   function showIntro(hasSave, onNew, onContinue) {
     showModal(`
@@ -1314,7 +1355,8 @@ const UI = (() => {
     init, refresh, toast, sfx, hideLoader,
     openPanel, closePanel, rerenderPanel, resetLogFeed,
     showModal, closeModal, isModalOpen,
-    showIntro, showVictory, openMenu, openBuildingInfo,
+    showIntro, showVictory, openMenu, openBuildingInfo, openHouseInfo,
+    showMissionStart, showMissionComplete,
     showModeHint, hideModeHint, doNextMonth,
   };
 })();

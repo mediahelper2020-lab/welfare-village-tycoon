@@ -113,7 +113,7 @@ DATA.BUILDINGS = [
     desc: '매일 따뜻한 한 끼 제공. 결식 어르신·수급 가구 사례 연계에도 쓰인다.',
   },
   {
-    id: 'jahwal', name: '자활일자리센터', icon: '🛠️',
+    id: 'jahwal', name: '지역자활센터', icon: '🛠️',
     cost: 5e8, upkeep: 1.2e7, size: 1, cap: 40, host: true,
     goodFor: ['basic', 'disabled', 'defector', 'multicultural'],
     passive: { basic: .8, disabled: .35, defector: .8, multicultural: .5 },
@@ -127,6 +127,22 @@ DATA.BUILDINGS = [
     passive: { senior: .45, disabled: .45, basic: .25, youth: .25, multicultural: .3, defector: .3, general: .25 },
     baseColor: 0xffffff, roofColor: 0x3c8a5c, height: 3.0,
     desc: '방문간호·만성질환 관리. 건강 취약 사례 연계에 필요하다.',
+  },
+  {
+    id: 'careHub', name: '통합돌봄센터', icon: '🩺',
+    cost: 11e8, upkeep: 2.4e7, size: 2, cap: 80, host: true,
+    goodFor: ['senior', 'disabled', 'basic'],
+    passive: { senior: .9, disabled: .7, basic: .3 },
+    baseColor: 0xc9dbe0, roofColor: 0x2f7d8a, height: 4.0,
+    desc: '의료·장기요양·돌봄을 한 곳에서 잇는 통합돌봄 거점. 맞춤형 케어플랜으로 어르신과 장애인의 삶을 지원한다.',
+  },
+  {
+    id: 'communityCenter', name: '주민커뮤니티센터', icon: '🎪',
+    cost: 7e8, upkeep: 1.6e7, size: 2, cap: 110, host: true,
+    goodFor: ['general', 'senior', 'youth', 'multicultural', 'defector', 'disabled', 'basic'],
+    passive: { general: .8, senior: .5, youth: .5, multicultural: .7, defector: .7, disabled: .3, basic: .3 },
+    baseColor: 0xf0d2a0, roofColor: 0xc85a4a, height: 3.6,
+    desc: '마을 행사와 축제를 여는 주민들의 사랑방. 어르신이 살던 곳에서 계속 지낼 수 있도록(AIP·Aging In Place) 이웃이 함께 살피는 공동케어회의도 이곳에서 열린다.',
   },
   {
     id: 'park', name: '마을공원', icon: '🌳',
@@ -296,7 +312,7 @@ DATA.RESOURCES = [
   { id: 'jobCenter',   name: '고용센터 취업성공패키지',      treats: ['job'],   cost: 0,    req: null,
     desc: '직업훈련과 구직활동을 단계별로 지원한다.' },
   { id: 'jahwalTeam',  name: '자활근로사업단 참여',        treats: ['job'],    cost: 0,     req: 'jahwal',
-    desc: '자활사업단에서 일 경험과 급여를 얻는다. (자활일자리센터 필요)' },
+    desc: '자활사업단에서 일 경험과 급여를 얻는다. (지역자활센터 필요)' },
 
   /* 새 대상 집단을 위한 자원 */
   { id: 'koreanClass', name: '다문화가족지원 한국어교실',   treats: ['language'], cost: 0,   req: 'familyCenter',

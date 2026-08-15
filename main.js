@@ -46,6 +46,13 @@
     UI.showModeHint('🧨 <b>철거 모드</b> · 시설이나 도로를 클릭하세요');
   }
 
+  function startMoveHouse(x, z) {
+    const h = Sim.state.houses.find(h => h.x === x && h.z === z);
+    if (!h) return;
+    World.setMode({ type: 'movehouse', fromX: x, fromZ: z, wall: h.wall, roof: h.roof });
+    UI.showModeHint('🚚 <b>주민 집 이사</b> · 옮길 빈 자리를 클릭하세요');
+  }
+
   function cancelMode() {
     pendingBuildDefId = null;
     World.setMode({ type: 'none' });
@@ -60,6 +67,24 @@
     if (!r.ok) { UI.toast(r.msg, 'err'); return; }
     World.addBuilding(r.inst);
     UI.sfx.place();
+    Sim.save();
+    UI.refresh();
+    cancelMode();
+    if (r.missionStarted) setTimeout(() => UI.showMissionStart(), 300);
+  }
+
+  function onHouseClick(x, z) {
+    if (World.getMode().type !== 'none') return;
+    UI.openHouseInfo(x, z);
+  }
+
+  function onHouseMoveConfirm(fromX, fromZ, toX, toZ, valid, reason) {
+    if (!valid) { UI.toast(reason || '그 자리로는 옮길 수 없습니다.', 'err'); return; }
+    const r = Sim.moveHouse(fromX, fromZ, toX, toZ);
+    if (!r.ok) { UI.toast(r.msg, 'err'); return; }
+    World.moveHouseMesh(fromX, fromZ, r.house);
+    UI.sfx.place();
+    UI.toast('🚚 주민 집을 새 자리로 옮겼습니다.', 'ok');
     Sim.save();
     UI.refresh();
     cancelMode();
@@ -184,8 +209,9 @@
     onTileClick, onBuildingClick, onLandClick,
     onRoadPaint, onRoadPaintEnd, onRoadRemove,
     onDecorPaint, onDecorPaintEnd, onDecorClick,
+    onHouseClick, onHouseMoveConfirm,
   });
-  UI.init({ startBuild, startLand, startRoad, startDecor, startBulldoze, cancelMode, demolish });
+  UI.init({ startBuild, startLand, startRoad, startDecor, startBulldoze, startMoveHouse, cancelMode, demolish });
 
   function bootWithState() {
     World.buildWorld();

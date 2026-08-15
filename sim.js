@@ -81,6 +81,8 @@ const Sim = (() => {
       buildings: [],       // {id, defId, x, z}
       decor: [],           // {id, defId, x, z} — 꾸미기 요소
       totalDecor: 0,
+      houses: [],          // {x, z, wall, roof} — 원래 살던 주민의 집 (이사 가능)
+      mission: { active: false, done: false },   // 주민커뮤니티센터 건립 시 시작되는 미션
       programs: [],        // 프로그램 객체
       cases: [],           // 사례 객체
       closedCases: 0,
@@ -221,6 +223,32 @@ const Sim = (() => {
     return Math.min(G.decor.length * 0.025, 1.2);
   }
 
+  /* ---------- 민가 ----------
+   * 지형 생성 때 흩뿌려진 원래 주민의 집. 철거는 못 하지만 클릭해서 다른
+   * 빈 자리로 이사 보낼 수 있다. World가 처음 생성한 배치를 한 번만
+   * 저장해 두어, 이사한 뒤에도 새로고침 시 같은 자리에 남아 있게 한다.
+   */
+  function setHouses(list) {
+    if (G.houses && G.houses.length) return;   // 이미 저장돼 있으면 재생성하지 않는다
+    G.houses = list.map(h => ({ x: h.x, z: h.z, wall: h.wall, roof: h.roof }));
+  }
+
+  function checkHouseMoveSite(x, z) {
+    if (!isOwned(x, z)) return { ok: false, msg: '우리 마을 땅이 아닙니다. 먼저 부지를 매입하세요.' };
+    if (isRoad(x, z)) return { ok: false, msg: '도로 위로는 옮길 수 없습니다.' };
+    return { ok: true };
+  }
+
+  function moveHouse(oldX, oldZ, newX, newZ) {
+    const h = G.houses.find(h => h.x === oldX && h.z === oldZ);
+    if (!h) return { ok: false, msg: '이사 보낼 집을 찾을 수 없습니다.' };
+    const site = checkHouseMoveSite(newX, newZ);
+    if (!site.ok) return site;
+    h.x = newX; h.z = newZ;
+    addLog('build', `🚚 주민 집을 새 자리로 옮겼습니다.`);
+    return { ok: true, house: h };
+  }
+
   /* ---------- 로그/기록 ---------- */
   function addLog(kind, text) {
     G.log.push({ turn: G.turn, kind, text, ym: `${G.year}년차 ${G.month}월` });
@@ -278,13 +306,18 @@ const Sim = (() => {
     const site = checkSite(def, x, z);
     if (!site.ok) return site;
     if (G.budget < def.cost) return { ok: false, msg: `예산이 부족합니다. (필요: ${fmtWon(def.cost)})` };
+    const firstCommunityCenter = defId === 'communityCenter' && !hasBuilding('communityCenter');
     const inst = { id: uid('bld'), defId, x, z };
     G.buildings.push(inst);
     G.budget -= def.cost;
     G.totalSpent += def.cost;
     G.rep = clamp(G.rep + 3, 0, 100);
     addLog('build', `${def.icon} ${def.name} 건립! (${fmtWon(def.cost)}) 주민들의 기대가 큽니다.`);
-    return { ok: true, inst };
+    if (firstCommunityCenter && !G.mission.active && !G.mission.done) {
+      G.mission.active = true;
+      addLog('mission', '🎪 [미션] 주민커뮤니티센터가 문을 열었습니다! 이곳을 무대로, 모든 주민이 함께 어울리는 프로그램을 기획해 보세요. 어르신이 살던 곳에서 오래오래 지낼 수 있도록(AIP) 이웃이 함께 살피는 공동케어회의도 여기서 열립니다.');
+    }
+    return { ok: true, inst, missionStarted: firstCommunityCenter && G.mission.active };
   }
 
   function demolish(instId) {
@@ -344,7 +377,20 @@ const Sim = (() => {
     G.programs.push(p);
     G.rep = clamp(G.rep + 1.5, 0, 100);
     addLog('program', `📋 신규 프로그램 「${title}」 개설! 다음 달부터 운영됩니다.`);
-    return { ok: true, program: p };
+
+    // 미션: 주민커뮤니티센터에서, 모든 주민 대상으로, '공동체' 색깔이 담긴 프로그램을 열면 완료
+    let missionCompleted = false;
+    if (G.mission.active && !G.mission.done && p.facilityDefId === 'communityCenter' &&
+        p.target === 'all' && p.keywords.includes('community')) {
+      G.mission.active = false;
+      G.mission.done = true;
+      missionCompleted = true;
+      const bonus = 3e8;
+      G.budget += bonus;
+      G.rep = clamp(G.rep + 8, 0, 100);
+      addLog('mission', `🏆 [미션 완료] 「${title}」 프로그램으로 지역주민이 함께 어울리는 마을을 만들었습니다! 공동케어회의를 통한 AIP(Aging In Place) 방안까지 마련되어 특별교부금 ${fmtWon(bonus)}이 지급되었습니다.`);
+    }
+    return { ok: true, program: p, missionCompleted };
   }
 
   function setProgramActive(pid, active) {
@@ -770,6 +816,8 @@ const Sim = (() => {
       s.totalHappinessBonus = s.totalHappinessBonus || 0;
       if (!s.decor) s.decor = [];
       s.totalDecor = s.totalDecor || 0;
+      if (!s.houses) s.houses = [];
+      if (!s.mission) s.mission = { active: false, done: false };
       return s;
     } catch (e) { return null; }
   }
@@ -790,5 +838,6 @@ const Sim = (() => {
     isOwned, isParcelOwned, isParcelBuyable, landPrice, buyParcel,
     isRoad, hasRoadAccess, buildRoad, removeRoad,
     getDecorDef, checkDecorSite, placeDecor, removeDecor, decorBeautyBonus,
+    setHouses, checkHouseMoveSite, moveHouse,
   };
 })();

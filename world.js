@@ -346,27 +346,46 @@ const World = (() => {
     }
   }
 
+  // 민가 한 채를 좌표/색으로 렌더링한다. 최초 생성과 이사 모두 이 함수를 거친다.
+  function placeHouseMesh(h) {
+    tiles[h.x][h.z] = 'house';
+    const g = makeHouse(h.wall, h.roof);
+    g.position.copy(tileCenter(h.x, h.z));
+    const facing = roadFacing(h.x, h.z, 1);
+    g.rotation.y = facing ? Math.atan2(facing[0], facing[1]) : 0;
+    g.userData.isHouse = true;
+    g.userData.hx = h.x;
+    g.userData.hz = h.z;
+    decorMeshes[key(h.x, h.z)] = g;
+    terrainGroup.add(g);
+    return g;
+  }
+
   function buildHousesAndTrees() {
-    // 기존 민가는 시작 도로변에 (마을이 이미 있던 자리)
+    // 저장된 민가 배치가 있으면(이사 포함) 그대로 재현하고, 없으면 처음 한 번만
+    // 시작 도로변에 새로 흩뿌려 심는다 — 이후 Sim에 저장해 다음부터는 그대로 쓴다.
     const roadSet = new Set(Sim.state.roads);
-    const spots = [];
-    for (let x = 0; x < GRID; x++) for (let z = 0; z < GRID; z++) {
-      if (tiles[x][z] !== 'grass') continue;
-      if (roadSet.has(key(x, z))) continue;
-      const near = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([dx, dz]) => roadSet.has(key(x + dx, z + dz)));
-      if (near) spots.push([x, z, near]);
-    }
-    shuffle(spots);
-    const walls = [0xf0e2c4, 0xe4d3cd, 0xd2e0dc, 0xe8dcec, 0xdfe6cb, 0xf2dfc8];
-    const roofs = [0xb85f4a, 0x9a5c72, 0x5f7f9a, 0xa8763c, 0x7d8a4e];
-    for (let i = 0; i < Math.min(14, spots.length); i++) {
-      const [x, z, near] = spots[i];
-      tiles[x][z] = 'house';
-      const h = makeHouse(walls[i % walls.length], roofs[i % roofs.length]);
-      h.position.copy(tileCenter(x, z));
-      h.rotation.y = Math.atan2(near[0], near[1]);
-      decorMeshes[key(x, z)] = h;
-      terrainGroup.add(h);
+    const saved = Sim.state.houses || [];
+    if (saved.length) {
+      for (const h of saved) placeHouseMesh(h);
+    } else {
+      const spots = [];
+      for (let x = 0; x < GRID; x++) for (let z = 0; z < GRID; z++) {
+        if (tiles[x][z] !== 'grass') continue;
+        if (roadSet.has(key(x, z))) continue;
+        const hasNear = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => roadSet.has(key(x + dx, z + dz)));
+        if (hasNear) spots.push([x, z]);
+      }
+      shuffle(spots);
+      const walls = [0xf0e2c4, 0xe4d3cd, 0xd2e0dc, 0xe8dcec, 0xdfe6cb, 0xf2dfc8];
+      const roofs = [0xb85f4a, 0x9a5c72, 0x5f7f9a, 0xa8763c, 0x7d8a4e];
+      const generated = [];
+      for (let i = 0; i < Math.min(14, spots.length); i++) {
+        const [x, z] = spots[i];
+        generated.push({ x, z, wall: walls[i % walls.length], roof: roofs[i % roofs.length] });
+      }
+      Sim.setHouses(generated);
+      for (const h of generated) placeHouseMesh(h);
     }
 
     // 가로수길 — 도로를 따라 나무를 심어 거리를 꾸민다 (직선 구간의 양옆에 듬성듬성)
@@ -1114,6 +1133,42 @@ const World = (() => {
   function isHouseTile(x, z) { return inGrid(x, z) && tiles[x][z] === 'house'; }
   function isDecorTile(x, z) { return inGrid(x, z) && tiles[x][z] === 'decor'; }
 
+  /* ---------- 민가 이사 배치 검사 ---------- */
+  function terrainFreeForHouseMove(ix, iz) {
+    if (!inGrid(ix, iz)) return { ok: false, msg: '지도 밖입니다.' };
+    const t = tiles[ix][iz];
+    if (t === 'water') return { ok: false, msg: '물 위로는 옮길 수 없습니다.' };
+    if (t === 'house') return { ok: false, msg: '이미 다른 집이 있는 자리입니다.' };
+    if (t === 'building') return { ok: false, msg: '이미 시설이 있는 자리입니다.' };
+    if (t === 'decor') return { ok: false, msg: '꾸밈 요소가 있는 자리입니다.' };
+    return { ok: true };
+  }
+
+  function canPlaceHouseMove(x, z) {
+    const t = terrainFreeForHouseMove(x, z);
+    if (!t.ok) return t;
+    return Sim.checkHouseMoveSite(x, z);
+  }
+
+  function pickHouseTile() {
+    raycaster.setFromCamera(pointer, camera);
+    const meshes = [];
+    Object.values(decorMeshes).forEach(g => {
+      if (!g.userData.isHouse) return;
+      g.traverse(o => { if (o.isMesh) { o.userData.hx = g.userData.hx; o.userData.hz = g.userData.hz; meshes.push(o); } });
+    });
+    const hits = raycaster.intersectObjects(meshes, false);
+    return hits.length ? { x: hits[0].object.userData.hx, z: hits[0].object.userData.hz } : null;
+  }
+
+  function moveHouseMesh(oldX, oldZ, house) {
+    const k = key(oldX, oldZ);
+    const g = decorMeshes[k];
+    if (g) { terrainGroup.remove(g); delete decorMeshes[k]; }
+    if (inGrid(oldX, oldZ)) tiles[oldX][oldZ] = 'grass';
+    return placeHouseMesh(house);
+  }
+
   function addBuilding(inst) {
     const def = Sim.getDef(inst.defId);
     for (let dx = 0; dx < def.size; dx++) for (let dz = 0; dz < def.size; dz++) {
@@ -1184,9 +1239,11 @@ const World = (() => {
   function setMode(m) {
     mode = m;
     if (ghost) { scene.remove(ghost); ghost = null; ghostDef = null; ghostTile = null; }
-    if (m.type === 'build' || m.type === 'decor') {
-      ghostDef = m.type === 'build' ? Sim.getDef(m.defId) : DATA.DECOR.find(d => d.id === m.defId);
-      ghost = m.type === 'build' ? makeBuildingMesh(ghostDef, false) : makeDecorMesh(ghostDef);
+    if (m.type === 'build' || m.type === 'decor' || m.type === 'movehouse') {
+      ghostDef = m.type === 'build' ? Sim.getDef(m.defId) : m.type === 'decor' ? DATA.DECOR.find(d => d.id === m.defId) : null;
+      ghost = m.type === 'build' ? makeBuildingMesh(ghostDef, false)
+        : m.type === 'decor' ? makeDecorMesh(ghostDef)
+        : makeHouse(m.wall, m.roof);
       ghost.traverse(o => {
         if (o.isMesh) {
           o.material = o.material.clone();
@@ -1271,7 +1328,11 @@ const World = (() => {
       endPaint();
       if (dragging && !dragging.moved && dragging.btn === 0 && mode.type === 'none') {
         const hit = pickBuilding();
-        if (hit && cbs.onBuildingClick) cbs.onBuildingClick(hit);
+        if (hit && cbs.onBuildingClick) { cbs.onBuildingClick(hit); }
+        else {
+          const hh = pickHouseTile();
+          if (hh && cbs.onHouseClick) cbs.onHouseClick(hh.x, hh.z);
+        }
       }
       dragging = null;
     });
@@ -1290,6 +1351,8 @@ const World = (() => {
       } else if (mode.type === 'land') {
         const t = pickGroundTile();
         if (t) cbs.onLandClick && cbs.onLandClick(Math.floor(t.x / PARCEL), Math.floor(t.z / PARCEL));
+      } else if (mode.type === 'movehouse' && ghostTile) {
+        cbs.onHouseMoveConfirm && cbs.onHouseMoveConfirm(mode.fromX, mode.fromZ, ghostTile.x, ghostTile.z, ghostValid, ghostReason);
       }
     });
 
@@ -1497,21 +1560,23 @@ const World = (() => {
       if (g.userData.tag) g.userData.tag.position.y = 3.4 + Math.sin(t * 2 + g.userData.parcel[0]) * 0.18;
     }
 
-    if ((mode.type === 'build' || mode.type === 'decor') && ghost) {
+    if ((mode.type === 'build' || mode.type === 'decor' || mode.type === 'movehouse') && ghost) {
       const t2 = pickGroundTile();
       if (t2) {
         const size = mode.type === 'build' ? ghostDef.size : 1;
         const ix = t2.x - Math.floor((size - 1) / 2);
         const iz = t2.z - Math.floor((size - 1) / 2);
         ghostTile = { x: ix, z: iz };
-        const chk = mode.type === 'build' ? canPlace(ghostDef, ix, iz) : canPlaceDecor(ix, iz);
+        const chk = mode.type === 'build' ? canPlace(ghostDef, ix, iz)
+          : mode.type === 'decor' ? canPlaceDecor(ix, iz)
+          : canPlaceHouseMove(ix, iz);
         ghostValid = chk.ok;
         ghostReason = chk.msg || '';
         const c = tileCenter(ix, iz, size);
         ghost.position.set(c.x, 0.02 + Math.sin(t * 3) * 0.06, c.z);
         // 도로 방향으로 미리 회전해서 보여준다
         const facing = roadFacing(ix, iz, size);
-        if (mode.type === 'build') {
+        if (mode.type === 'build' || mode.type === 'movehouse') {
           ghost.rotation.y = facing ? Math.atan2(facing[0], facing[1]) : 0;
         } else if (DIRECTIONAL_DECOR_KINDS.has(ghostDef.kind) && facing) {
           ghost.rotation.y = Math.atan2(facing[0], facing[1]);
@@ -1576,6 +1641,7 @@ const World = (() => {
     init, buildWorld, update, resize, setMode, getMode,
     addBuilding, removeBuilding, canPlace,
     addDecor, removeDecorInst, canPlaceDecor, isHouseTile, isDecorTile,
+    canPlaceHouseMove, pickHouseTile, moveHouseMesh,
     addRoad, removeRoadTile, refreshRoads, refreshParcels,
     focusCamera, syncVillagerCount,
     get GRID() { return GRID; },
@@ -1586,6 +1652,15 @@ const World = (() => {
       get tiles() { return tiles; },
       get ghostTile() { return ghostTile; },
       get ghostValid() { return ghostValid; },
+      get decorMeshes() { return decorMeshes; },
+      // 타일 좌표 -> 화면 픽셀 좌표 (자동화 테스트에서 클릭 지점을 계산하는 용도)
+      projectTile(x, z) {
+        const v = tileCenter(x, z).project(camera);
+        return {
+          x: (v.x + 1) / 2 * renderer.domElement.clientWidth,
+          y: (1 - v.y) / 2 * renderer.domElement.clientHeight,
+        };
+      },
     },
   };
 })();
