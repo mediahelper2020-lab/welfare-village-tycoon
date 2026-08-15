@@ -109,14 +109,14 @@ const UI = (() => {
     $('#mPopBar').style.width = Math.min(100, pop / Sim.GOAL.pop * 100) + '%';
     $('#mSat').textContent = sat.toFixed(0) + '점';
     $('#mSatBar').style.width = sat + '%';
-    $('#mRep').textContent = G.rep.toFixed(0) + '점';
-    $('#mRepBar').style.width = G.rep + '%';
+    $('#mCase').textContent = G.closedCases.toLocaleString() + '건';
+    $('#mCaseBar').style.width = Math.min(100, G.closedCases / Sim.CASE_TARGET * 100) + '%';
 
     const pd = Math.min(100, pop / Sim.GOAL.pop * 100);
     const sd = Math.min(100, sat / Sim.GOAL.sat * 100);
     $('#goalProgress').innerHTML = G.won
       ? '<span class="goalhit">🏆 목표 달성!</span>'
-      : `달성 <b>${pd.toFixed(0)}%</b> · <b>${sd.toFixed(0)}%</b>`;
+      : `🎯 인구 <b>${pd.toFixed(0)}%</b> · 만족도 <b>${sd.toFixed(0)}%</b>`;
 
     const nOpen = Sim.openCases().length;
     const badge = $('#caseBadge');
@@ -582,7 +582,7 @@ const UI = (() => {
     body.innerHTML = `
       <div class="statgrid">
         <div class="stattile" style="grid-column:1/-1">
-          <div class="k">총점 · 인구 + 만족도×20 + 평판×10 + 종결사례×100 + 시설×30</div>
+          <div class="k">총점 · 인구 ${pop.toLocaleString()} + 만족도 ${Sim.avgSat().toFixed(0)}×20 + 종결사례 ${G.closedCases}×100</div>
           <div class="v num" style="font-size:24px;color:var(--gold)">${Sim.score().toLocaleString()}점</div>
         </div>
         <div class="stattile"><div class="k">인구</div><div class="v num">${pop.toLocaleString()}명</div></div>

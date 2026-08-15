@@ -185,17 +185,18 @@ const Sim = (() => {
     return DATA.GROUP_IDS.reduce((s, g) => s + G.sat[g] * G.pop[g], 0) / t;
   }
   /* ---------- 총점 ----------
-   * 마을 운영을 한 숫자로 요약한다. 인구만 늘리는 것보다
-   * 만족도를 지키고 사례를 종결하는 쪽이 더 크게 쳐준다.
+   * 점수판에 보이는 세 지표만으로 계산한다 — 보이는 것이 곧 점수다.
+   * 인구만 불리는 것보다 만족도를 지키고 사례를 종결하는 쪽을 크게 쳐준다.
+   * (평판과 시설은 점수에 직접 들어가지 않지만, 평판은 인구 유입을,
+   *  시설은 만족도를 끌어올려 결국 점수로 돌아온다.)
    */
-  const SCORE_W = { pop: 1, sat: 20, rep: 10, closed: 100, building: 30 };
+  const SCORE_W = { pop: 1, sat: 20, closed: 100 };
+  const CASE_TARGET = 30;    // 종결 사례 막대가 가득 차는 기준
   function score() {
     return Math.round(
       totalPop() * SCORE_W.pop
       + avgSat() * SCORE_W.sat
-      + G.rep * SCORE_W.rep
       + G.closedCases * SCORE_W.closed
-      + G.buildings.length * SCORE_W.building
     );
   }
 
@@ -587,7 +588,7 @@ const Sim = (() => {
     build, demolish, getDef, hasBuilding, upkeepTotal, checkSite,
     createProgram, setProgramActive, hostableFacilities, detectKeywords,
     linkResource, openCases, resourceAvailable, makeCase,
-    nextMonth, totalPop, avgSat, score, SCORE_W, fmtWon, addLog,
+    nextMonth, totalPop, avgSat, score, SCORE_W, CASE_TARGET, fmtWon, addLog,
     isOwned, isParcelOwned, isParcelBuyable, landPrice, buyParcel,
     isRoad, hasRoadAccess, buildRoad, removeRoad,
   };
