@@ -184,6 +184,21 @@ const Sim = (() => {
     if (!t) return 0;
     return DATA.GROUP_IDS.reduce((s, g) => s + G.sat[g] * G.pop[g], 0) / t;
   }
+  /* ---------- 총점 ----------
+   * 마을 운영을 한 숫자로 요약한다. 인구만 늘리는 것보다
+   * 만족도를 지키고 사례를 종결하는 쪽이 더 크게 쳐준다.
+   */
+  const SCORE_W = { pop: 1, sat: 20, rep: 10, closed: 100, building: 30 };
+  function score() {
+    return Math.round(
+      totalPop() * SCORE_W.pop
+      + avgSat() * SCORE_W.sat
+      + G.rep * SCORE_W.rep
+      + G.closedCases * SCORE_W.closed
+      + G.buildings.length * SCORE_W.building
+    );
+  }
+
   function pushHistory() {
     G.history.push({
       turn: G.turn, label: `${G.year}년차 ${G.month}월`,
@@ -572,7 +587,7 @@ const Sim = (() => {
     build, demolish, getDef, hasBuilding, upkeepTotal, checkSite,
     createProgram, setProgramActive, hostableFacilities, detectKeywords,
     linkResource, openCases, resourceAvailable, makeCase,
-    nextMonth, totalPop, avgSat, fmtWon, addLog,
+    nextMonth, totalPop, avgSat, score, SCORE_W, fmtWon, addLog,
     isOwned, isParcelOwned, isParcelBuyable, landPrice, buyParcel,
     isRoad, hasRoadAccess, buildRoad, removeRoad,
   };

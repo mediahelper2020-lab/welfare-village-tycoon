@@ -110,30 +110,47 @@
   }
   @keyframes dropIn { from { opacity: 0; transform: translateY(-14px) } to { opacity: 1; transform: none } }
 
-  /* ============ 지표 ============ */
+  /* ============ 점수판 (오른쪽 위, 작게) ============ */
   #metrics {
-    position: fixed; top: 16px; right: 16px; padding: 14px 18px; z-index: 10; min-width: 268px;
-    animation: dropIn .5s .07s var(--ease) both;
+    position: fixed; top: 16px; right: 16px; padding: 10px 12px 9px; z-index: 10;
+    width: 196px; animation: dropIn .5s .07s var(--ease) both;
   }
-  .metric { display: flex; align-items: center; gap: 11px; margin: 9px 0; font-size: 12.5px; }
-  .metric .lb { width: 46px; color: var(--ink-2); flex: none; font-weight: 600; }
+  .scorehead {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    padding-bottom: 8px; margin-bottom: 7px; border-bottom: 1px solid var(--line);
+  }
+  .scorehead .lb {
+    font-size: 10px; font-weight: 700; color: var(--ink-3); letter-spacing: .08em; flex: none;
+  }
+  .scorehead .sc {
+    font-size: 20px; font-weight: 800; color: var(--gold);
+    letter-spacing: -.03em; line-height: 1;
+  }
+  .scorehead .sc.up { animation: scorePop .7s var(--ease); }
+  @keyframes scorePop { 0% { transform: scale(1.16); filter: brightness(1.45) } 100% { transform: none } }
+
+  .metric { display: flex; align-items: center; gap: 7px; margin: 5px 0; font-size: 10.5px; }
+  .metric .lb { width: 27px; color: var(--ink-3); flex: none; font-weight: 600; }
   .metric .bar {
-    flex: 1; height: 7px; background: rgba(255,255,255,.10); border-radius: 4px;
+    flex: 1; height: 5px; background: rgba(255,255,255,.10); border-radius: 3px;
     overflow: hidden; position: relative;
   }
   .metric .bar i {
-    display: block; height: 100%; border-radius: 4px; width: 0;
+    display: block; height: 100%; border-radius: 3px; width: 0;
     transition: width .7s var(--ease);
-    box-shadow: 0 0 10px -1px currentColor;
+    box-shadow: 0 0 8px -1px currentColor;
   }
   .metric .bar u {
     position: absolute; top: -2px; bottom: -2px; width: 2px; border-radius: 1px;
     background: rgba(255,255,255,.5);
   }
-  .metric .val { width: 56px; text-align: right; font-weight: 800; letter-spacing: -.02em; }
+  .metric .val {
+    width: 42px; text-align: right; font-weight: 700; font-size: 10.5px; letter-spacing: -.02em;
+    color: var(--ink);
+  }
   #goalLine {
-    margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line);
-    color: var(--ink-3); font-size: 11.5px; line-height: 1.6;
+    margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--line);
+    color: var(--ink-3); font-size: 10px; line-height: 1.5;
   }
   #goalLine b { color: var(--ink-2); }
   .goalhit { color: #6ee0b8; font-weight: 800; }
@@ -423,15 +440,16 @@
 
   /* ============ 반응형 ============ */
   @media (max-width: 900px) {
-    #metrics { min-width: 0; padding: 11px 13px; }
-    #metrics .metric .lb { width: 38px; }
     #sidepanel { width: 380px; }
   }
   @media (max-width: 760px) {
     #hud { padding: 10px 13px; min-width: 0; }
     #hud .budget { font-size: 20px; }
     #hud .sub { display: none; }
-    #metrics { display: none; }
+    /* 좁은 화면에서는 점수만 남긴다 */
+    #metrics { width: auto; padding: 9px 12px; }
+    #metrics .metric, #metrics #goalLine { display: none; }
+    #metrics .scorehead { padding-bottom: 0; margin-bottom: 0; border-bottom: none; gap: 9px; }
     #sidepanel { width: calc(100vw - 24px); right: 12px; top: 12px; bottom: 92px; }
     #logfeed { width: calc(100vw - 24px); left: 12px; max-height: 20vh; bottom: 92px; }
     #toolbar { gap: 2px; padding: 6px; bottom: 12px; }
@@ -463,14 +481,18 @@
     <div class="sub" id="hudUpkeep">월 고정지출 0원</div>
   </div>
 
-  <div id="metrics" class="glass">
+  <div id="metrics" class="glass" title="점수 = 인구 + 만족도×20 + 평판×10 + 종결사례×100 + 시설×30">
+    <div class="scorehead">
+      <span class="lb">점수</span>
+      <span class="sc num" id="mScore">0</span>
+    </div>
     <div class="metric">
       <span class="lb">인구</span>
       <span class="bar"><u id="mPopGoal" style="left:100%"></u><i id="mPopBar" style="background:var(--c-senior);color:var(--c-senior)"></i></span>
       <span class="val num" id="mPop">500명</span>
     </div>
     <div class="metric">
-      <span class="lb">만족도</span>
+      <span class="lb">만족</span>
       <span class="bar"><u id="mSatGoal" style="left:80%"></u><i id="mSatBar" style="background:var(--good);color:var(--good)"></i></span>
       <span class="val num" id="mSat">42점</span>
     </div>
@@ -479,7 +501,7 @@
       <span class="bar"><i id="mRepBar" style="background:var(--c-general);color:var(--c-general)"></i></span>
       <span class="val num" id="mRep">30점</span>
     </div>
-    <div id="goalLine">🎯 목표 · 인구 <b>1,000명</b> · 만족도 <b>80점</b><br><span id="goalProgress"></span></div>
+    <div id="goalLine">🎯 <b>1,000명</b> · <b>80점</b><br><span id="goalProgress"></span></div>
   </div>
 
   <div id="modeHint" class="glass">

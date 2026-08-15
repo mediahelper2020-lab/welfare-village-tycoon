@@ -19,6 +19,7 @@ const UI = (() => {
   let autoTimer = null;
   let renderedLogCount = 0;
   let lastBudget = null;
+  let lastScore = null;
   let hooks = {};
 
   /* ---------- 로컬 저장소 (차단된 환경에서도 죽지 않도록) ---------- */
@@ -94,6 +95,16 @@ const UI = (() => {
     $('#hudUpkeep').innerHTML = `월 고정지출 <b>${fmt(monthly)}</b> · 누적 집행 ${fmt(G.totalSpent)}`;
 
     const pop = Sim.totalPop(), sat = Sim.avgSat();
+    const sc = Sim.score();
+    const scEl = $('#mScore');
+    if (lastScore !== null && sc > lastScore) {
+      scEl.classList.remove('up');
+      void scEl.offsetWidth;
+      scEl.classList.add('up');
+    }
+    scEl.textContent = sc.toLocaleString();
+    lastScore = sc;
+
     $('#mPop').textContent = pop.toLocaleString() + '명';
     $('#mPopBar').style.width = Math.min(100, pop / Sim.GOAL.pop * 100) + '%';
     $('#mSat').textContent = sat.toFixed(0) + '점';
@@ -104,8 +115,8 @@ const UI = (() => {
     const pd = Math.min(100, pop / Sim.GOAL.pop * 100);
     const sd = Math.min(100, sat / Sim.GOAL.sat * 100);
     $('#goalProgress').innerHTML = G.won
-      ? '<span class="goalhit">🏆 목표 달성! 전국이 주목하는 복지도시</span>'
-      : `달성률 · 인구 <b>${pd.toFixed(0)}%</b> · 만족도 <b>${sd.toFixed(0)}%</b>`;
+      ? '<span class="goalhit">🏆 목표 달성!</span>'
+      : `달성 <b>${pd.toFixed(0)}%</b> · <b>${sd.toFixed(0)}%</b>`;
 
     const nOpen = Sim.openCases().length;
     const badge = $('#caseBadge');
@@ -570,6 +581,10 @@ const UI = (() => {
 
     body.innerHTML = `
       <div class="statgrid">
+        <div class="stattile" style="grid-column:1/-1">
+          <div class="k">총점 · 인구 + 만족도×20 + 평판×10 + 종결사례×100 + 시설×30</div>
+          <div class="v num" style="font-size:24px;color:var(--gold)">${Sim.score().toLocaleString()}점</div>
+        </div>
         <div class="stattile"><div class="k">인구</div><div class="v num">${pop.toLocaleString()}명</div></div>
         <div class="stattile"><div class="k">전입 누계</div><div class="v num">+${(pop - startPop).toLocaleString()}명</div></div>
         <div class="stattile"><div class="k">취약계층 비율</div><div class="v num">${(vulnerable / pop * 100).toFixed(0)}%</div></div>
@@ -832,6 +847,10 @@ const UI = (() => {
         전국에서 벤치마킹 견학이 이어지고 "살고 싶은 마을" 1위에 선정되었습니다.
       </p>
       <div class="statgrid" style="margin-top:18px">
+        <div class="stattile" style="grid-column:1/-1">
+          <div class="k">최종 점수</div>
+          <div class="v num" style="font-size:26px;color:var(--gold)">${Sim.score().toLocaleString()}점</div>
+        </div>
         <div class="stattile"><div class="k">인구</div><div class="v num">${Sim.totalPop().toLocaleString()}명</div></div>
         <div class="stattile"><div class="k">평균 만족도</div><div class="v num">${Sim.avgSat().toFixed(0)}점</div></div>
         <div class="stattile"><div class="k">종결 사례</div><div class="v num">${G.closedCases}건</div></div>
