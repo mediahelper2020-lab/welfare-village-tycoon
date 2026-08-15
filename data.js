@@ -31,14 +31,24 @@ DATA.ROAD = {
   refund: 1e6,       // 철거 시 100만 원 환급
 };
 
-/* ---------- 주민 그룹 ---------- */
+/* ---------- 주민 그룹 ----------
+ * 색은 dataviz 검증기(명도밴드·채도·색각·대비)를 나열 순서까지 포함해 통과한 조합이다.
+ * 순서를 바꾸면 인접 색 대비가 달라지므로 다시 검증해야 한다.
+ * 어디서든 색과 함께 그룹 이름을 같이 표시한다 — 색만으로 구분하지 않는다.
+ */
 DATA.GROUPS = {
-  senior:   { id: 'senior',   label: '독거노인',       short: '노인', color: '#4d8fd6' },
-  disabled: { id: 'disabled', label: '발달장애인',     short: '장애', color: '#c07f2b' },
-  basic:    { id: 'basic',    label: '기초생활수급자', short: '수급', color: '#2fa07f' },
-  general:  { id: 'general',  label: '일반 주민',      short: '일반', color: '#a96fd0' },
+  senior:        { id: 'senior',        label: '독거노인',       short: '노인',   color: '#4a86dd' },
+  disabled:      { id: 'disabled',      label: '발달장애인',     short: '장애',   color: '#d36c00' },
+  youth:         { id: 'youth',         label: '위기청소년',     short: '청소년', color: '#d1408f' },
+  basic:         { id: 'basic',         label: '기초생활수급자', short: '수급',   color: '#3fa621' },
+  multicultural: { id: 'multicultural', label: '다문화이주민',   short: '다문화', color: '#0096af' },
+  defector:      { id: 'defector',      label: '북한이탈주민',   short: '탈북',   color: '#8f8a2e' },
+  general:       { id: 'general',       label: '일반 주민',      short: '일반',   color: '#9f63b9' },
 };
-DATA.GROUP_IDS = ['senior', 'disabled', 'basic', 'general'];
+DATA.GROUP_IDS = ['senior', 'disabled', 'youth', 'basic', 'multicultural', 'defector', 'general'];
+
+/* 일반 주민을 뺀 취약계층 (통계·공모사업에서 묶어 쓴다) */
+DATA.VULNERABLE_IDS = ['senior', 'disabled', 'youth', 'basic', 'multicultural', 'defector'];
 
 /* ---------- 복지시설 ----------
  * cost/upkeep: 원 단위. size: 타일 변 길이(1 또는 2). cap: 프로그램 수용 정원.
@@ -49,8 +59,8 @@ DATA.BUILDINGS = [
   {
     id: 'welfare', name: '종합사회복지관', icon: '🏢',
     cost: 12e8, upkeep: 3.0e7, size: 2, cap: 120, host: true,
-    goodFor: ['senior', 'disabled', 'basic', 'general'],
-    passive: { senior: .5, disabled: .5, basic: .5, general: .4 },
+    goodFor: ['senior', 'disabled', 'youth', 'basic', 'multicultural', 'defector', 'general'],
+    passive: { senior: .45, disabled: .45, youth: .4, basic: .45, multicultural: .4, defector: .4, general: .35 },
     baseColor: 0x9fb8d8, roofColor: 0x3f6ea8, height: 4.6,
     desc: '마을 복지의 중심. 모든 대상에게 프로그램을 열 수 있는 대형 거점 시설.',
   },
@@ -73,16 +83,16 @@ DATA.BUILDINGS = [
   {
     id: 'familyCenter', name: '가족센터', icon: '🏠',
     cost: 8e8, upkeep: 1.8e7, size: 2, cap: 80, host: true,
-    goodFor: ['general', 'basic'],
-    passive: { general: .8, basic: .5 },
+    goodFor: ['general', 'basic', 'multicultural'],
+    passive: { general: .7, basic: .45, multicultural: 1.1, defector: .4 },
     baseColor: 0xf3c8c8, roofColor: 0xb85c5c, height: 3.4,
     desc: '가족상담·돌봄·다문화 지원. 일반 주민과 수급 가구의 만족도를 올린다.',
   },
   {
     id: 'childCenter', name: '지역아동센터', icon: '🎒',
     cost: 3e8, upkeep: 0.8e7, size: 1, cap: 40, host: true,
-    goodFor: ['basic', 'general'],
-    passive: { basic: .7, general: .3 },
+    goodFor: ['basic', 'general', 'youth'],
+    passive: { basic: .6, general: .25, youth: 1.0 },
     baseColor: 0xc8e6a8, roofColor: 0x5c8a3c, height: 2.6,
     desc: '방과후 돌봄과 학습 지원. 아동이 있는 취약 가구에 큰 힘이 된다.',
   },
@@ -105,8 +115,8 @@ DATA.BUILDINGS = [
   {
     id: 'jahwal', name: '자활일자리센터', icon: '🛠️',
     cost: 5e8, upkeep: 1.2e7, size: 1, cap: 40, host: true,
-    goodFor: ['basic', 'disabled'],
-    passive: { basic: .9, disabled: .4 },
+    goodFor: ['basic', 'disabled', 'defector', 'multicultural'],
+    passive: { basic: .8, disabled: .35, defector: .8, multicultural: .5 },
     baseColor: 0xb8c8d8, roofColor: 0x4a6a8a, height: 3.0,
     desc: '수급자·장애인의 일 경험과 자활을 지원. 일자리 프로그램의 거점.',
   },
@@ -114,15 +124,15 @@ DATA.BUILDINGS = [
     id: 'healthPost', name: '보건지소', icon: '💊',
     cost: 6e8, upkeep: 1.5e7, size: 1, cap: 30, host: true,
     goodFor: ['senior', 'disabled'],
-    passive: { senior: .5, disabled: .5, basic: .3, general: .3 },
+    passive: { senior: .45, disabled: .45, basic: .25, youth: .25, multicultural: .3, defector: .3, general: .25 },
     baseColor: 0xffffff, roofColor: 0x3c8a5c, height: 3.0,
     desc: '방문간호·만성질환 관리. 건강 취약 사례 연계에 필요하다.',
   },
   {
     id: 'park', name: '마을공원', icon: '🌳',
     cost: 1e8, upkeep: 0.2e7, size: 1, cap: 0, host: false,
-    goodFor: ['senior', 'disabled', 'basic', 'general'],
-    passive: { senior: .3, disabled: .3, basic: .3, general: .3 },
+    goodFor: ['senior', 'disabled', 'youth', 'basic', 'multicultural', 'defector', 'general'],
+    passive: { senior: .3, disabled: .3, youth: .3, basic: .3, multicultural: .3, defector: .3, general: .3 },
     baseColor: 0x88b868, roofColor: 0x88b868, height: 0.4, isPark: true,
     desc: '누구나 쉬어가는 초록 쉼터. 마을 전체 만족도를 조금씩 올린다.',
   },
@@ -131,23 +141,23 @@ DATA.BUILDINGS = [
 /* ---------- 프로그램 키워드 → 대상별 호응 배수 ---------- */
 DATA.KEYWORDS = [
   { id: 'health',  label: '건강',   words: ['건강', '운동', '체조', '걷기', '스트레칭', '재활', '요가'],
-    interest: { senior: 1.35, disabled: 1.20, basic: 1.05, general: 1.10 } },
+    interest: { senior: 1.35, disabled: 1.20, basic: 1.05, general: 1.10, youth: 1.05, multicultural: 1.1, defector: 1.15 } },
   { id: 'food',    label: '식생활', words: ['요리', '식사', '반찬', '급식', '영양', '밥', '먹거리'],
-    interest: { senior: 1.30, disabled: 1.10, basic: 1.25, general: 1.05 } },
+    interest: { senior: 1.30, disabled: 1.10, basic: 1.25, general: 1.05, youth: 1.15, multicultural: 1.2, defector: 1.25 } },
   { id: 'culture', label: '문화',   words: ['문화', '음악', '미술', '노래', '공연', '원예', '악기', '합창', '그림'],
-    interest: { senior: 1.20, disabled: 1.25, basic: 1.10, general: 1.20 } },
+    interest: { senior: 1.20, disabled: 1.25, basic: 1.10, general: 1.20, youth: 1.3, multicultural: 1.35, defector: 1.15 } },
   { id: 'edu',     label: '교육',   words: ['교육', '배움', '학습', '교실', '한글', '문해', '공부'],
-    interest: { senior: 1.15, disabled: 1.15, basic: 1.20, general: 1.10 } },
+    interest: { senior: 1.15, disabled: 1.15, basic: 1.20, general: 1.10, youth: 1.35, multicultural: 1.4, defector: 1.35 } },
   { id: 'counsel', label: '심리',   words: ['상담', '마음', '치유', '심리', '힐링', '우울'],
-    interest: { senior: 1.20, disabled: 1.20, basic: 1.20, general: 1.10 } },
+    interest: { senior: 1.20, disabled: 1.20, basic: 1.20, general: 1.10, youth: 1.35, multicultural: 1.2, defector: 1.35 } },
   { id: 'job',     label: '일자리', words: ['일자리', '취업', '자활', '직업', '바리스타', '창업', '근로'],
-    interest: { senior: 1.05, disabled: 1.25, basic: 1.40, general: 1.10 } },
+    interest: { senior: 1.05, disabled: 1.25, basic: 1.40, general: 1.10, youth: 1.3, multicultural: 1.3, defector: 1.4 } },
   { id: 'outing',  label: '나들이', words: ['나들이', '여행', '소풍', '체험', '캠프', '견학'],
-    interest: { senior: 1.30, disabled: 1.30, basic: 1.20, general: 1.20 } },
+    interest: { senior: 1.30, disabled: 1.30, basic: 1.20, general: 1.20, youth: 1.25, multicultural: 1.3, defector: 1.3 } },
   { id: 'digital', label: '디지털', words: ['디지털', '스마트폰', '키오스크', '컴퓨터', '인터넷', '영상통화'],
-    interest: { senior: 1.40, disabled: 1.10, basic: 1.10, general: 1.05 } },
+    interest: { senior: 1.40, disabled: 1.10, basic: 1.10, general: 1.05, youth: 1.2, multicultural: 1.2, defector: 1.25 } },
   { id: 'community', label: '공동체', words: ['공동체', '이웃', '마을', '축제', '장터', '봉사', '나눔'],
-    interest: { senior: 1.10, disabled: 1.10, basic: 1.10, general: 1.30 } },
+    interest: { senior: 1.10, disabled: 1.10, basic: 1.10, general: 1.30, youth: 1.15, multicultural: 1.35, defector: 1.35 } },
 ];
 
 /* ---------- 프로그램 월 예산 선택지 ---------- */
@@ -209,6 +219,9 @@ DATA.NEEDS = {
   edu:     { id: 'edu',     label: '학습·양육 곤란', icon: '📚', desc: '아동 학습 부진, 양육 부담 과중' },
   legal:   { id: 'legal',   label: '법률 문제',     icon: '⚖️', desc: '임대차 분쟁·서류 문제 등 법적 조력 필요' },
   job:     { id: 'job',     label: '실직·구직난',   icon: '💼', desc: '오랜 실직으로 소득이 끊긴 상태' },
+  language:{ id: 'language',label: '언어 장벽',     icon: '💬', desc: '한국어가 서툴러 서류·병원·학교 소통이 어려움' },
+  settle:  { id: 'settle',  label: '정착 어려움',   icon: '🧭', desc: '낯선 제도와 문화에 적응하지 못해 고립됨' },
+  school:  { id: 'school',  label: '학업 중단 위기', icon: '🎓', desc: '학교 부적응으로 등교를 멈춘 상태' },
 };
 
 /* ---------- 지역자원 (사례 연계용) ----------
@@ -249,6 +262,22 @@ DATA.RESOURCES = [
     desc: '직업훈련과 구직활동을 단계별로 지원한다.' },
   { id: 'jahwalTeam',  name: '자활근로사업단 참여',        treats: ['job'],    cost: 0,     req: 'jahwal',
     desc: '자활사업단에서 일 경험과 급여를 얻는다. (자활일자리센터 필요)' },
+
+  /* 새 대상 집단을 위한 자원 */
+  { id: 'koreanClass', name: '다문화가족지원 한국어교실',   treats: ['language'], cost: 0,   req: 'familyCenter',
+    desc: '생활 한국어와 통·번역을 지원한다. (가족센터 필요)' },
+  { id: 'interpreter', name: '이중언어 통역 자원봉사',      treats: ['language'], cost: 3e5, req: null,
+    desc: '병원·학교 동행 통역을 지원한다.' },
+  { id: 'hanaCenter',  name: '남북하나재단·하나센터',       treats: ['settle'], cost: 0,     req: null,
+    desc: '북한이탈주민의 정착금·자립 상담과 지역 적응을 돕는다.' },
+  { id: 'settleMentor',name: '먼저 정착한 이웃 멘토',       treats: ['settle'], cost: 0,     req: null,
+    desc: '같은 처지를 먼저 겪은 주민이 길잡이가 되어준다.' },
+  { id: 'wee',         name: 'Wee센터·학교사회복지사',      treats: ['school'], cost: 0,     req: null,
+    desc: '학교 부적응과 학업 중단을 상담으로 지원한다.' },
+  { id: 'dropoutCtr',  name: '학교밖청소년지원센터(꿈드림)', treats: ['school'], cost: 0,    req: null,
+    desc: '검정고시·직업체험으로 학업과 진로를 잇는다.' },
+  { id: 'youthShelter',name: '청소년쉼터',                  treats: ['housing', 'care'], cost: 6e5, req: null,
+    desc: '가정 밖 청소년에게 안전한 잠자리와 보호를 제공한다.' },
 ];
 
 /* ---------- 사례 생성 템플릿 ---------- */
@@ -281,6 +310,39 @@ DATA.CASE_TEMPLATES = {
       '지병으로 일을 쉬는 사이 카드빚이 불어났다. 독촉 전화에 잠을 설친다.',
       '반지하 집에 곰팡이가 번져 아이가 기침을 달고 산다.',
       '한부모 가정. 야간 일을 하는 동안 아이를 맡길 곳이 없다.',
+    ],
+  },
+  youth: {
+    ageRange: [14, 22],
+    needPool: ['school', 'mental', 'care', 'housing', 'job', 'food'],
+    stories: [
+      '{yrs}개월째 학교에 나가지 않고 있다. 낮에는 자고 밤에 골목을 서성인다.',
+      '집이 편치 않아 친구 집을 전전한다. 끼니는 편의점에서 때운다.',
+      '또래와 크게 다툰 뒤 교실에 들어가는 게 무섭다고 한다.',
+      '검정고시를 준비하고 싶은데 어디서부터 해야 할지 모르겠다고 한다.',
+      '보호자와 갈등이 깊어 집을 나온 지 여러 날 되었다.',
+    ],
+  },
+  multicultural: {
+    ageRange: [24, 55],
+    needPool: ['language', 'edu', 'job', 'mental', 'finance', 'care'],
+    stories: [
+      '결혼 후 한국에 온 지 {yrs}년. 아이 학교에서 오는 알림장을 읽지 못해 늘 마음을 졸인다.',
+      '병원에 혼자 가기가 두렵다. 증상을 설명할 말을 찾지 못한다.',
+      '고향 말을 쓸 이웃이 없어 하루 종일 아무와도 대화하지 않는 날이 많다.',
+      '자격증이 있지만 한국어 시험 때문에 번번이 취업이 막힌다.',
+      '아이가 학교에서 겉돈다는 이야기를 듣고 밤잠을 설친다.',
+    ],
+  },
+  defector: {
+    ageRange: [22, 60],
+    needPool: ['settle', 'job', 'mental', 'finance', 'health', 'housing'],
+    stories: [
+      '남한에 온 지 {yrs}년. 은행 업무와 관공서 서류가 여전히 낯설다.',
+      '두고 온 가족 생각에 잠을 이루지 못하는 날이 많다.',
+      '이력이 인정되지 않아 예전에 하던 일을 이어가지 못하고 있다.',
+      '말투 때문에 시선을 받는 것 같아 사람 만나는 자리를 피하게 된다.',
+      '정착지원금이 끊긴 뒤 생활이 급격히 어려워졌다.',
     ],
   },
 };
@@ -319,6 +381,81 @@ DATA.NAMES = {
   seniorGiven: ['영자', '순덕', '말순', '병철', '기수', '옥분', '점례', '만복', '금례', '춘식', '복순', '판술', '정례', '두식', '옥례', '용팔'],
   adultGiven: ['민수', '지영', '성호', '은정', '태윤', '수진', '현우', '미경', '동혁', '세라', '준호', '가은', '상철', '유나', '재만', '하늘'],
   youngGiven: ['도윤', '서연', '하준', '지우', '시우', '아린', '준서', '다은'],
+};
+
+/* ---------- 공모사업 ----------
+ * 사회복지공동모금회 공모 사업을 본뜬 지원사업 목록.
+ * 신청서(제목·목적·목표·프로그램 내용)를 심사 기준에 맞춰 쓰면 선정된다.
+ *   target   : 사업 대상 그룹
+ *   grant    : 선정 시 지원금
+ *   keywords : 목적·내용에 담기면 좋은 핵심어 (하나만 맞아도 인정)
+ *   facility : 있으면 수행 역량으로 가점되는 시설 (없어도 신청은 가능)
+ */
+DATA.GRANTS = [
+  {
+    id: 'g_disabled_indep', org: '사회복지공동모금회',
+    name: '발달장애인 자립지원 사업', target: 'disabled', grant: 5e8,
+    summary: '성인기 발달장애인이 지역사회에서 자기 삶을 꾸려가도록 자립생활과 직업활동을 지원합니다.',
+    keywords: ['자립', '발달장애', '직업', '일자리', '주간활동', '자기결정', '훈련', '자립생활'],
+    facility: 'disabledCenter',
+  },
+  {
+    id: 'g_senior_qol', org: '사회복지공동모금회',
+    name: '독거노인 삶의 질 향상 사업', target: 'senior', grant: 4e8,
+    summary: '홀로 사는 어르신의 고립을 줄이고 건강과 일상을 함께 돌보는 사업입니다.',
+    keywords: ['독거', '어르신', '고립', '건강', '안부', '돌봄', '식사', '여가'],
+    facility: 'seniorCenter',
+  },
+  {
+    id: 'g_youth_next', org: '사회복지공동모금회',
+    name: '위기청소년 학업·자립 지원 사업', target: 'youth', grant: 3.5e8,
+    summary: '학교 밖에 있거나 학업을 멈춘 청소년이 배움과 진로를 다시 잇도록 돕습니다.',
+    keywords: ['청소년', '학업', '진로', '검정고시', '멘토', '상담', '자립', '학교밖'],
+    facility: 'childCenter',
+  },
+  {
+    id: 'g_multi_settle', org: '사회복지공동모금회',
+    name: '다문화가정 정착 지원 사업', target: 'multicultural', grant: 3e8,
+    summary: '이주 배경 주민과 그 자녀가 언어와 관계의 장벽을 넘어 마을에 뿌리내리도록 돕습니다.',
+    keywords: ['다문화', '이주', '한국어', '통역', '자녀', '정착', '문화', '이중언어'],
+    facility: 'familyCenter',
+  },
+  {
+    id: 'g_defector_adapt', org: '사회복지공동모금회',
+    name: '북한이탈주민 지역사회 적응 사업', target: 'defector', grant: 3e8,
+    summary: '북한이탈주민이 낯선 제도와 관계에 적응하고 안정된 일자리를 찾도록 지원합니다.',
+    keywords: ['북한이탈', '탈북', '정착', '적응', '취업', '심리', '멘토', '지역사회'],
+    facility: 'jahwal',
+  },
+  {
+    id: 'g_basic_edu', org: '사회복지공동모금회',
+    name: '저소득 아동 교육격차 해소 사업', target: 'basic', grant: 3.5e8,
+    summary: '형편 때문에 배움의 기회를 놓치는 아이가 없도록 학습과 돌봄을 지원합니다.',
+    keywords: ['아동', '학습', '교육', '방과후', '돌봄', '격차', '수급', '결식'],
+    facility: 'childCenter',
+  },
+  {
+    id: 'g_community_care', org: '사회복지공동모금회',
+    name: '이웃이 이웃을 돌보는 마을 사업', target: 'all', grant: 2.5e8,
+    summary: '주민이 서로의 안부를 살피는 마을 돌봄 관계망을 만듭니다.',
+    keywords: ['이웃', '마을', '공동체', '돌봄', '관계망', '봉사', '나눔', '안부'],
+    facility: 'welfare',
+  },
+  {
+    id: 'g_casemgmt', org: '사회복지공동모금회',
+    name: '통합사례관리 역량강화 사업', target: 'all', grant: 3e8,
+    summary: '복합적인 어려움을 겪는 가구를 여러 기관이 함께 지원하는 통합사례관리를 강화합니다.',
+    keywords: ['사례관리', '통합', '연계', '자원', '위기가구', '민관협력', '솔루션'],
+    facility: 'welfare',
+  },
+];
+
+/* 공모 신청서 심사 기준 (UI와 채점 로직이 함께 참조한다) */
+DATA.GRANT_RULES = {
+  minPurpose: 30,     // 목적 최소 글자수
+  minContent: 60,     // 프로그램 내용 최소 글자수
+  passScore: 70,      // 선정 기준 점수
+  cooldown: 2,        // 탈락 후 재신청까지 기다리는 개월 수
 };
 
 /* ---------- 프로그램 작성 예시(placeholder) ---------- */

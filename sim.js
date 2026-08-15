@@ -68,9 +68,14 @@ const Sim = (() => {
       month: 3, year: 1, turn: 0,          // 1년차 3월(회계연도 시작)부터
       budget: START_BUDGET,
       totalGrant: 0, totalSpent: 0, totalLand: 0, totalRoad: 0,
-      pop: { senior: 85, disabled: 40, basic: 125, general: 250 },
-      sat: { senior: 40, disabled: 38, basic: 41, general: 47 },
+      // 500명 중 절반이 취약계층
+      pop: { senior: 70, disabled: 30, youth: 25, basic: 75, multicultural: 35, defector: 15, general: 250 },
+      sat: { senior: 40, disabled: 38, youth: 36, basic: 41, multicultural: 37, defector: 35, general: 47 },
       rep: 30,
+      grants: [],          // 선정된 공모사업 id
+      grantTries: {},      // {공모id: 마지막 신청 turn} — 탈락 후 재도전 대기
+      totalGrantWon: 0,    // 공모로 확보한 금액
+      totalHappinessBonus: 0,
       parcels: initialParcels(),   // 보유한 구역 ["px,pz", …]
       roads: initialRoads(),       // 깔린 도로 타일 ["x,z", …]
       buildings: [],       // {id, defId, x, z}
@@ -378,8 +383,11 @@ const Sim = (() => {
 
   /* ---------- 사례관리 ---------- */
   function makeCase() {
-    const roll = Math.random();
-    const group = roll < 0.4 ? 'senior' : roll < 0.65 ? 'disabled' : 'basic';
+    // 사례가 잦은 집단일수록 자주 접수된다
+    const weights = { senior: 26, basic: 24, disabled: 14, youth: 14, multicultural: 13, defector: 9 };
+    const total = Object.values(weights).reduce((a, b) => a + b, 0);
+    let roll = Math.random() * total, group = 'senior';
+    for (const [g, w] of Object.entries(weights)) { roll -= w; if (roll <= 0) { group = g; break; } }
     const t = DATA.CASE_TEMPLATES[group];
     const age = irnd(t.ageRange[0], t.ageRange[1]);
     const name = makeName(group, age);
@@ -440,12 +448,144 @@ const Sim = (() => {
       G.rep = clamp(G.rep + 2.5, 0, 100);
       G.sat[c.group] = clamp(G.sat[c.group] + 2, 0, 100);
       addLog('case', `🎉 ${c.name}님 사례 종결! "${G.village} 덕분에 다시 살아갈 힘이 생겼어요."`);
-      return { ok: true, closed: true };
+
+      // 사례가 잘 풀릴수록 주민 행복지수가 오르고, 그만큼 보조금이 따라온다
+      const bonus = happinessBonus();
+      G.budget += bonus;
+      G.totalGrant += bonus;
+      G.totalHappinessBonus += bonus;
+      addLog('money', `💰 주민 행복지수가 높아져서 보조금 ${fmtWon(bonus)}이 추가되었습니다.`);
+
+      return { ok: true, closed: true, bonus };
     }
     return { ok: true, closed: false };
   }
 
   function openCases() { return G.cases.filter(c => !c.closed); }
+
+  /* ---------- 행복지수 보조금 ----------
+   * 사례를 종결할 때마다 주민 만족도에 비례한 보조금이 들어온다.
+   * 만족도가 높을수록(= 마을이 살 만할수록) 더 크게 돌아온다.
+   */
+  function happinessBonus() {
+    return Math.round(avgSat() * 6e5 + totalPop() * 2e4);
+  }
+
+  /* =========================================================
+   * 공모사업
+   * ========================================================= */
+  function getGrant(id) { return DATA.GRANTS.find(g => g.id === id); }
+  function isGrantWon(id) { return G.grants.includes(id); }
+
+  /** 탈락 후 재도전까지 남은 개월 수 (0이면 지금 신청 가능) */
+  function grantCooldown(id) {
+    const last = G.grantTries[id];
+    if (last === undefined) return 0;
+    return Math.max(0, DATA.GRANT_RULES.cooldown - (G.turn - last));
+  }
+
+  const countWords = (text, words) => words.filter(w => text.includes(w)).length;
+
+  /**
+   * 신청서를 심사한다. 항목별 점수와 사유를 함께 돌려주어
+   * 왜 붙고 왜 떨어졌는지 배울 수 있게 한다.
+   */
+  function reviewGrant(grantId, form) {
+    const g = getGrant(grantId);
+    const R = DATA.GRANT_RULES;
+    const title = (form.title || '').trim();
+    const purpose = (form.purpose || '').trim();
+    const goal = (form.goal || '').trim();
+    const content = (form.content || '').trim();
+    const all = `${title} ${purpose} ${goal} ${content}`;
+
+    const items = [];
+
+    // 1. 사업 대상이 분명한가 (25)
+    const hitKw = countWords(all, g.keywords);
+    items.push({
+      label: '대상과 사업 취지가 드러나는가',
+      max: 25,
+      score: hitKw >= 3 ? 25 : hitKw === 2 ? 18 : hitKw === 1 ? 10 : 0,
+      ok: hitKw >= 2,
+      hint: hitKw >= 2
+        ? `공모 취지에 맞는 표현 ${hitKw}개를 확인했습니다.`
+        : `이 공모의 핵심어(${g.keywords.slice(0, 4).join(', ')} 등)가 잘 드러나지 않습니다.`,
+    });
+
+    // 2. 목적이 충분히 서술되었는가 (20)
+    const pOk = purpose.length >= R.minPurpose;
+    items.push({
+      label: '목적이 구체적으로 서술되었는가',
+      max: 20,
+      score: pOk ? (purpose.length >= R.minPurpose * 1.6 ? 20 : 15) : Math.round(purpose.length / R.minPurpose * 10),
+      ok: pOk,
+      hint: pOk ? '목적이 충분히 적혀 있습니다.'
+                : `목적을 ${R.minPurpose}자 이상 써주세요. 지금 ${purpose.length}자입니다.`,
+    });
+
+    // 3. 목표가 측정 가능한가 (25) — 숫자가 들어가야 한다
+    const nums = goal.match(/\d+/g) || [];
+    const gOk = nums.length >= 1 && goal.length >= 15;
+    items.push({
+      label: '목표가 숫자로 측정 가능한가',
+      max: 25,
+      score: nums.length >= 2 && goal.length >= 25 ? 25 : gOk ? 18 : 5,
+      ok: gOk,
+      hint: gOk ? '정량 목표가 확인됩니다.'
+                : '목표에 숫자를 넣어주세요. 예) "월 2회, 20명 참여, 만족도 80점 이상"',
+    });
+
+    // 4. 프로그램 내용이 구체적인가 (20)
+    const cOk = content.length >= R.minContent;
+    items.push({
+      label: '프로그램 내용이 구체적인가',
+      max: 20,
+      score: cOk ? (content.length >= R.minContent * 1.8 ? 20 : 15) : Math.round(content.length / R.minContent * 10),
+      ok: cOk,
+      hint: cOk ? '진행 방식이 충분히 적혀 있습니다.'
+                : `내용을 ${R.minContent}자 이상 써주세요. 무엇을 몇 회, 누구와 하는지 적으면 좋습니다. 지금 ${content.length}자입니다.`,
+    });
+
+    // 5. 수행 역량 — 관련 시설 보유 (10)
+    const hasFac = !g.facility || hasBuilding(g.facility);
+    const facName = g.facility ? getDef(g.facility).name : '';
+    items.push({
+      label: '사업을 수행할 시설이 있는가',
+      max: 10,
+      score: hasFac ? 10 : 0,
+      ok: hasFac,
+      hint: hasFac ? (facName ? `${facName}을(를) 보유하고 있습니다.` : '수행 여건을 갖췄습니다.')
+                   : `${facName}이(가) 있으면 수행 역량에서 가점을 받습니다.`,
+    });
+
+    const total = items.reduce((s, i) => s + i.score, 0);
+    return { total, pass: total >= R.passScore, items, grant: g };
+  }
+
+  /** 심사 결과를 실제로 반영한다 */
+  function applyGrant(grantId, form) {
+    const g = getGrant(grantId);
+    if (!g) return { ok: false, msg: '알 수 없는 공모사업입니다.' };
+    if (isGrantWon(grantId)) return { ok: false, msg: '이미 선정된 공모사업입니다.' };
+    const wait = grantCooldown(grantId);
+    if (wait > 0) return { ok: false, msg: `재신청까지 ${wait}개월 남았습니다. 신청서를 더 다듬어 보세요.` };
+
+    const result = reviewGrant(grantId, form);
+    G.grantTries[grantId] = G.turn;
+
+    if (result.pass) {
+      G.grants.push(grantId);
+      G.budget += g.grant;
+      G.totalGrant += g.grant;
+      G.totalGrantWon += g.grant;
+      G.rep = clamp(G.rep + 3, 0, 100);
+      addLog('grant', `🎊 「${g.name}」 선정! 지원금 ${fmtWon(g.grant)}이 예산에 들어왔습니다. (심사 ${result.total}점)`);
+    } else {
+      addLog('warn', `📋 「${g.name}」 미선정 (심사 ${result.total}점 / ${DATA.GRANT_RULES.passScore}점). 보완해서 다시 도전해 보세요.`);
+    }
+    return { ok: true, result };
+  }
 
   /* ---------- 월 진행 ---------- */
   function nextMonth() {
@@ -510,7 +650,7 @@ const Sim = (() => {
         const vulnerable = Math.round(persons * 0.3);
         const gen = persons - vulnerable;
         G.pop.general += gen;
-        const vg = pick(['senior', 'basic', 'disabled']);
+        const vg = pick(DATA.VULNERABLE_IDS);
         G.pop[vg] += vulnerable;
         const line = pick(DATA.MIGRATION_LINES).replace('{n}', persons);
         addLog('move', '🏡 ' + line);
@@ -574,6 +714,15 @@ const Sim = (() => {
       if (s.seed === undefined) s.seed = 1;
       s.totalLand = s.totalLand || 0;
       s.totalRoad = s.totalRoad || 0;
+      // 그룹이 4개뿐이던 저장본도 열리도록 새 그룹을 채운다
+      for (const g of DATA.GROUP_IDS) {
+        if (s.pop[g] === undefined) s.pop[g] = 0;
+        if (s.sat[g] === undefined) s.sat[g] = 38;
+      }
+      if (!s.grants) s.grants = [];
+      if (!s.grantTries) s.grantTries = {};
+      s.totalGrantWon = s.totalGrantWon || 0;
+      s.totalHappinessBonus = s.totalHappinessBonus || 0;
       return s;
     } catch (e) { return null; }
   }
@@ -589,6 +738,8 @@ const Sim = (() => {
     createProgram, setProgramActive, hostableFacilities, detectKeywords,
     linkResource, openCases, resourceAvailable, makeCase,
     nextMonth, totalPop, avgSat, score, SCORE_W, CASE_TARGET, fmtWon, addLog,
+    happinessBonus,
+    GRANTS: DATA.GRANTS, getGrant, isGrantWon, grantCooldown, reviewGrant, applyGrant,
     isOwned, isParcelOwned, isParcelBuyable, landPrice, buyParcel,
     isRoad, hasRoadAccess, buildRoad, removeRoad,
   };

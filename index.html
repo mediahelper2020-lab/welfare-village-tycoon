@@ -31,10 +31,14 @@
     --warn: #c8862f;
     --bad: #d96a6a;
 
-    --c-senior: #4d8fd6;
-    --c-disabled: #c07f2b;
-    --c-basic: #2fa07f;
-    --c-general: #a96fd0;
+    /* 주민 그룹 — data.js의 DATA.GROUPS와 같은 값 (dataviz 검증 통과 조합) */
+    --c-senior: #4a86dd;
+    --c-disabled: #d36c00;
+    --c-youth: #d1408f;
+    --c-basic: #3fa621;
+    --c-multicultural: #0096af;
+    --c-defector: #8f8a2e;
+    --c-general: #9f63b9;
 
     --r-s: 9px;
     --r-m: 13px;
@@ -183,6 +187,8 @@
   .logitem.event { border-left-color: var(--warn); }
   .logitem.program { border-left-color: var(--c-basic); }
   .logitem.sys   { border-left-color: var(--gold); }
+  .logitem.grant { border-left-color: var(--gold); }
+  .logitem.land  { border-left-color: var(--c-multicultural); }
   @keyframes logIn { from { opacity: 0; transform: translateX(-18px) } to { opacity: 1; transform: none } }
 
   /* ============ 툴바 ============ */
@@ -266,6 +272,7 @@
   .card h3 { font-size: 14px; font-weight: 800; letter-spacing: -.02em; line-height: 1.4; }
   .card .desc { color: var(--ink-2); font-size: 12.5px; line-height: 1.62; margin-top: 4px; }
   .card.urgent { border-color: rgba(217,106,106,.45); background: rgba(217,106,106,.07); }
+  .card.granted { border-color: rgba(240,198,116,.45); background: rgba(240,198,116,.06); }
 
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .row.tight { gap: 5px; }
@@ -279,9 +286,14 @@
     color: var(--ink-2); white-space: nowrap; line-height: 1.5;
   }
   .chip i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
-  .chip.senior i { background: var(--c-senior); } .chip.disabled i { background: var(--c-disabled); }
-  .chip.basic i { background: var(--c-basic); }   .chip.general i { background: var(--c-general); }
-  .chip.all i { background: linear-gradient(90deg, var(--c-senior), var(--c-general)); }
+  .chip.senior i        { background: var(--c-senior); }
+  .chip.disabled i      { background: var(--c-disabled); }
+  .chip.youth i         { background: var(--c-youth); }
+  .chip.basic i         { background: var(--c-basic); }
+  .chip.multicultural i { background: var(--c-multicultural); }
+  .chip.defector i      { background: var(--c-defector); }
+  .chip.general i       { background: var(--c-general); }
+  .chip.all i { background: linear-gradient(90deg, var(--c-senior), var(--c-youth), var(--c-general)); }
   .chip.done { color: #6ee0b8; background: rgba(47,160,127,.16); }
   .chip.owned { color: var(--accent-2); background: rgba(77,143,214,.16); }
 
@@ -542,10 +554,10 @@
     <button class="tbtn" data-panel="programs"><span class="ico">📋</span>프로그램</button>
     <button class="tbtn" data-panel="cases"><span class="ico">🤝</span>사례관리<span id="caseBadge" class="badge" style="display:none"></span></button>
     <button class="tbtn" data-panel="stats"><span class="ico">📊</span>통계</button>
+    <button class="tbtn" data-panel="grants"><span class="ico">📜</span>공모사업</button>
     <button class="tbtn" data-panel="rank"><span class="ico">🏆</span>랭킹</button>
     <span class="tbdiv"></span>
     <button class="tbtn primary" id="nextBtn"><span class="ico">▶</span>다음 달</button>
-    <button class="tbtn" id="autoBtn" title="자동 진행"><span class="ico">⏩</span>자동</button>
     <button class="tbtn" id="menuBtn" title="메뉴"><span class="ico">⚙️</span>메뉴</button>
   </div>
 

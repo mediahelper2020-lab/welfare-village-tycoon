@@ -16,7 +16,6 @@ const UI = (() => {
   }
 
   let currentPanel = null;
-  let autoTimer = null;
   let renderedLogCount = 0;
   let lastBudget = null;
   let lastScore = null;
@@ -147,6 +146,7 @@ const UI = (() => {
     programs: () => renderPrograms(),
     cases: () => renderCases(),
     stats: () => renderStats(),
+    grants: () => renderGrants(),
     rank: () => renderRank(),
   };
 
@@ -579,6 +579,163 @@ const UI = (() => {
     });
   }
 
+  /* ---------- 공모사업 ---------- */
+  function renderGrants() {
+    const G = Sim.state;
+    $('#panelTitle').textContent = '📜 공모사업';
+    const body = $('#panelBody');
+
+    const won = G.grants.length;
+    const total = DATA.GRANTS.length;
+    let html = `<p class="lede">사회복지공동모금회 등의 공모사업에 신청해 <b>사업비를 따올 수 있습니다.</b>
+      공모 취지에 맞게 제목·목적·목표·프로그램 내용을 쓰면 심사를 거쳐 선정됩니다.
+      떨어져도 보완해서 다시 도전할 수 있습니다.</p>
+
+      <div class="statgrid" style="margin-bottom:14px">
+        <div class="stattile"><div class="k">선정</div><div class="v num">${won} / ${total}건</div></div>
+        <div class="stattile"><div class="k">확보한 사업비</div><div class="v num">${fmt(G.totalGrantWon || 0)}</div></div>
+      </div>`;
+
+    for (const g of DATA.GRANTS) {
+      const isWon = Sim.isGrantWon(g.id);
+      const wait = Sim.grantCooldown(g.id);
+      const tgt = g.target === 'all'
+        ? '<span class="chip all"><i></i>전체 주민</span>'
+        : `<span class="chip ${g.target}"><i></i>${DATA.GROUPS[g.target].label}</span>`;
+      const facName = g.facility ? Sim.getDef(g.facility).name : null;
+      const hasFac = !g.facility || Sim.hasBuilding(g.facility);
+
+      html += `
+      <div class="card ${isWon ? 'granted' : ''}">
+        <div class="row spread" style="align-items:flex-start">
+          <h3>${isWon ? '✅ ' : ''}${esc(g.name)}</h3>
+          <span class="price">${fmt(g.grant)}</span>
+        </div>
+        <div class="muted" style="margin-top:3px">${esc(g.org)}</div>
+        <div class="desc">${esc(g.summary)}</div>
+        <div class="row tight" style="margin-top:9px">
+          ${tgt}
+          ${facName ? `<span class="chip ${hasFac ? 'owned' : ''}">${hasFac ? '✓' : '·'} ${esc(facName)}</span>` : ''}
+        </div>
+        <div class="row spread" style="margin-top:11px">
+          <span class="muted">${isWon ? '선정 완료 · 사업비가 예산에 반영되었습니다'
+            : wait > 0 ? `재신청까지 ${wait}개월` : '신청서를 작성해 제출하세요'}</span>
+          <button class="btn small" data-grant="${g.id}" ${isWon || wait > 0 ? 'disabled' : ''}>
+            ${isWon ? '선정됨' : wait > 0 ? '대기 중' : '신청하기'}</button>
+        </div>
+      </div>`;
+    }
+
+    body.innerHTML = html;
+    stagger(body);
+    body.querySelectorAll('[data-grant]').forEach(b =>
+      b.onclick = () => { sfx.click(); openGrantForm(b.dataset.grant); });
+  }
+
+  function openGrantForm(grantId) {
+    const g = Sim.getGrant(grantId);
+    const R = DATA.GRANT_RULES;
+    const tgtLabel = g.target === 'all' ? '전체 주민' : DATA.GROUPS[g.target].label;
+
+    showModal(`
+      <h2>📜 ${esc(g.name)}</h2>
+      <p class="muted" style="margin-top:4px">${esc(g.org)} · 지원금 <b style="color:var(--gold)">${fmt(g.grant)}</b> · 대상 ${esc(tgtLabel)}</p>
+      <p class="lead">${esc(g.summary)}</p>
+
+      <div class="card" style="margin-top:14px">
+        <h3>심사 기준</h3>
+        <div class="desc">
+          ① 대상과 사업 취지가 드러나는가 <b>25점</b><br>
+          ② 목적이 구체적으로 서술되었는가 <b>20점</b> (${R.minPurpose}자 이상)<br>
+          ③ 목표가 숫자로 측정 가능한가 <b>25점</b><br>
+          ④ 프로그램 내용이 구체적인가 <b>20점</b> (${R.minContent}자 이상)<br>
+          ⑤ 사업을 수행할 시설이 있는가 <b>10점</b><br>
+          <span class="muted">${R.passScore}점 이상이면 선정됩니다.</span>
+        </div>
+      </div>
+
+      <label class="fl"><span>사업명</span><span class="hint">최대 40자</span></label>
+      <input type="text" id="gfTitle" maxlength="40" placeholder="예) 함께 걷는 첫걸음, ${esc(tgtLabel)} 자립 프로젝트" autocomplete="off" />
+
+      <label class="fl"><span>사업 목적</span><span class="hint" id="gfPc">0자</span></label>
+      <textarea id="gfPurpose" maxlength="400" placeholder="왜 이 사업이 필요한지, 어떤 문제를 해결하려는지 적어주세요."></textarea>
+
+      <label class="fl"><span>사업 목표</span><span class="hint">숫자를 넣어 측정 가능하게</span></label>
+      <textarea id="gfGoal" maxlength="300" placeholder="예) 대상자 20명 발굴, 주 1회 12회기 운영, 참여자 만족도 80점 이상"></textarea>
+
+      <label class="fl"><span>프로그램 내용</span><span class="hint" id="gfCc">0자</span></label>
+      <textarea id="gfContent" maxlength="800" placeholder="무엇을, 누구와, 몇 회, 어떻게 진행하는지 구체적으로 적어주세요."></textarea>
+
+      <div id="gfHint" class="muted" style="margin-top:8px; line-height:1.6"></div>
+
+      <div class="modal-actions">
+        <button class="btn ghostb" id="gfCancel">취소</button>
+        <button class="btn" id="gfSubmit">신청서 제출</button>
+      </div>
+    `);
+
+    const update = () => {
+      $('#gfPc').textContent = $('#gfPurpose').value.length + '자';
+      $('#gfCc').textContent = $('#gfContent').value.length + '자';
+      const all = $('#gfTitle').value + ' ' + $('#gfPurpose').value + ' ' + $('#gfGoal').value + ' ' + $('#gfContent').value;
+      const hit = g.keywords.filter(k => all.includes(k));
+      $('#gfHint').innerHTML = hit.length
+        ? `🔍 확인된 핵심어 ${hit.map(k => `<span class="chip owned">${esc(k)}</span>`).join(' ')}`
+        : `🔍 이 공모의 핵심어가 아직 없습니다 — ${g.keywords.slice(0, 5).map(esc).join(' · ')} 등을 담아보세요.`;
+    };
+    ['gfTitle', 'gfPurpose', 'gfGoal', 'gfContent'].forEach(id => $('#' + id).oninput = update);
+    update();
+
+    $('#gfCancel').onclick = closeModal;
+    $('#gfSubmit').onclick = () => {
+      const form = {
+        title: $('#gfTitle').value,
+        purpose: $('#gfPurpose').value,
+        goal: $('#gfGoal').value,
+        content: $('#gfContent').value,
+      };
+      if (!form.title.trim()) { toast('사업명을 입력해 주세요.', 'err'); return; }
+      const r = Sim.applyGrant(grantId, form);
+      if (!r.ok) { toast(r.msg, 'err'); return; }
+      Sim.save();
+      showGrantResult(r.result);
+      refresh();
+    };
+    setTimeout(() => $('#gfTitle').focus(), 60);
+  }
+
+  function showGrantResult(res) {
+    const g = res.grant;
+    const rows = res.items.map(i => `
+      <div class="need ${i.ok ? 'resolved' : ''}">
+        <div class="nt">${i.ok ? '✅' : '⚠️'} ${esc(i.label)}
+          <span class="chip ${i.ok ? 'done' : ''}">${i.score} / ${i.max}점</span></div>
+        <div class="nd">${esc(i.hint)}</div>
+      </div>`).join('');
+
+    if (res.pass) sfx.good(); else sfx.bad();
+
+    showModal(`
+      <div style="text-align:center">
+        <div style="font-size:42px; line-height:1">${res.pass ? '🎊' : '📋'}</div>
+        <h2 style="margin-top:8px">${res.pass ? '선정되었습니다!' : '아쉽게 선정되지 못했습니다'}</h2>
+      </div>
+      <p class="lead" style="text-align:center">
+        ${esc(g.name)}<br>
+        심사 결과 <b style="color:${res.pass ? 'var(--gold)' : 'var(--ink)'}">${res.total}점</b>
+        / 선정 기준 ${DATA.GRANT_RULES.passScore}점
+        ${res.pass ? `<br><br>사업비 <b style="color:var(--gold)">${fmt(g.grant)}</b>이 예산에 들어왔습니다.`
+                   : `<br><br>아래 지적사항을 보완해 <b>${DATA.GRANT_RULES.cooldown}개월 뒤</b> 다시 신청할 수 있습니다.`}
+      </p>
+      <div class="hr"></div>
+      ${rows}
+      <div class="modal-actions">
+        <button class="btn" onclick="UI.closeModal()">${res.pass ? '고맙습니다!' : '보완하겠습니다'}</button>
+      </div>
+    `);
+    if (currentPanel === 'grants') renderGrants();
+  }
+
   /* ---------- 랭킹 ---------- */
   let myEntryId = store.get('wt_rank_id') || null;
 
@@ -721,7 +878,7 @@ const UI = (() => {
     $('#panelTitle').textContent = '📊 마을 통계';
     const body = $('#panelBody');
     const pop = Sim.totalPop();
-    const vulnerable = G.pop.senior + G.pop.disabled + G.pop.basic;
+    const vulnerable = DATA.VULNERABLE_IDS.reduce((a, g) => a + G.pop[g], 0);
     const startPop = G.history.length ? G.history[0].pop : pop;
 
     body.innerHTML = `
@@ -740,6 +897,8 @@ const UI = (() => {
         <div class="stattile"><div class="k">도로</div><div class="v num">${G.roads.length}칸</div></div>
         <div class="stattile"><div class="k">토지 매입비</div><div class="v num">${fmt(G.totalLand || 0)}</div></div>
         <div class="stattile"><div class="k">도로 공사비</div><div class="v num">${fmt(G.totalRoad || 0)}</div></div>
+        <div class="stattile"><div class="k">공모 사업비</div><div class="v num">${fmt(G.totalGrantWon || 0)}</div></div>
+        <div class="stattile"><div class="k">행복지수 보조금</div><div class="v num">${fmt(G.totalHappinessBonus || 0)}</div></div>
         <div class="stattile"><div class="k">운영 프로그램</div><div class="v num">${G.programs.filter(p => p.active).length}개</div></div>
         <div class="stattile"><div class="k">종결 사례</div><div class="v num">${G.closedCases}건</div></div>
       </div>
@@ -1058,18 +1217,6 @@ const UI = (() => {
     if (Sim.state.won && !wasWon) showVictory();
   }
 
-  function setAuto(on) {
-    if (on && !autoTimer) {
-      autoTimer = setInterval(() => { if (!isModalOpen()) doNextMonth(); }, 6000);
-      $('#autoBtn').classList.add('on');
-      toast('자동 진행 · 6초마다 한 달씩 지나갑니다.');
-    } else if (!on && autoTimer) {
-      clearInterval(autoTimer);
-      autoTimer = null;
-      $('#autoBtn').classList.remove('on');
-    }
-  }
-
   /* ---------- 모드 힌트 ---------- */
   function showModeHint(html) {
     $('#modeHintText').innerHTML = html;
@@ -1091,7 +1238,6 @@ const UI = (() => {
     });
     $('#panelClose').onclick = () => { sfx.click(); closePanel(); };
     $('#nextBtn').onclick = () => doNextMonth();
-    $('#autoBtn').onclick = () => setAuto(!autoTimer);
     $('#menuBtn').onclick = () => { sfx.click(); openMenu(); };
     $('#modeCancelBtn').onclick = () => hooks.cancelMode();
 
@@ -1112,6 +1258,6 @@ const UI = (() => {
     openPanel, closePanel, rerenderPanel, resetLogFeed,
     showModal, closeModal, isModalOpen,
     showIntro, showVictory, openMenu, openBuildingInfo,
-    showModeHint, hideModeHint, doNextMonth, setAuto,
+    showModeHint, hideModeHint, doNextMonth,
   };
 })();
