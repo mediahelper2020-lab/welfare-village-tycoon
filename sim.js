@@ -79,6 +79,8 @@ const Sim = (() => {
       parcels: initialParcels(),   // 보유한 구역 ["px,pz", …]
       roads: initialRoads(),       // 깔린 도로 타일 ["x,z", …]
       buildings: [],       // {id, defId, x, z}
+      decor: [],           // {id, defId, x, z} — 꾸미기 요소
+      totalDecor: 0,
       programs: [],        // 프로그램 객체
       cases: [],           // 사례 객체
       closedCases: 0,
@@ -175,6 +177,48 @@ const Sim = (() => {
     G.roads.splice(i, 1);
     G.budget += DATA.ROAD.refund;
     return { ok: true };
+  }
+
+  /* ---------- 꾸미기 ----------
+   * 나무·벤치·조형물 같은 소품. 건물과 달리 도로 접근이 필요 없고,
+   * 우리 땅 위 빈자리(물·건물·도로·다른 꾸밈요소가 아닌 곳)면 어디든 놓을 수 있다.
+   * 타일 상태 판정은 World가 하고, 여기서는 소유권·도로 여부만 본다.
+   */
+  function getDecorDef(defId) { return DATA.DECOR.find(d => d.id === defId); }
+
+  function checkDecorSite(x, z) {
+    if (!isOwned(x, z)) return { ok: false, msg: '우리 마을 땅이 아닙니다. 먼저 부지를 매입하세요.' };
+    if (isRoad(x, z)) return { ok: false, msg: '도로 위에는 놓을 수 없습니다.' };
+    return { ok: true };
+  }
+
+  function placeDecor(defId, x, z) {
+    const def = getDecorDef(defId);
+    if (!def) return { ok: false, msg: '알 수 없는 꾸밈 요소입니다.' };
+    const site = checkDecorSite(x, z);
+    if (!site.ok) return site;
+    if (G.budget < def.cost) return { ok: false, msg: `예산이 부족합니다. (필요: ${fmtWon(def.cost)})` };
+    const inst = { id: uid('dec'), defId, x, z };
+    G.decor.push(inst);
+    G.budget -= def.cost;
+    G.totalSpent += def.cost;
+    G.totalDecor += def.cost;
+    return { ok: true, inst };
+  }
+
+  function removeDecor(instId) {
+    const i = G.decor.findIndex(d => d.id === instId);
+    if (i < 0) return { ok: false, msg: '꾸밈 요소를 찾을 수 없습니다.' };
+    const def = getDecorDef(G.decor[i].defId);
+    const refund = Math.round(def.cost * 0.5);
+    G.decor.splice(i, 1);
+    G.budget += refund;
+    return { ok: true, refund, def };
+  }
+
+  // 꾸밈 요소가 많을수록 마을이 예뻐져 만족도가 아주 조금씩 오른다 (상한 있음)
+  function decorBeautyBonus() {
+    return Math.min(G.decor.length * 0.025, 1.2);
   }
 
   /* ---------- 로그/기록 ---------- */
@@ -619,9 +663,10 @@ const Sim = (() => {
       runProgramMonth(p);
     }
 
-    // 3) 만족도 자연 감소(관심이 끊기면 서서히 하락)
+    // 3) 만족도 자연 감소(관심이 끊기면 서서히 하락) + 꾸민 마을의 미관 보너스
+    const beauty = decorBeautyBonus();
     for (const g of DATA.GROUP_IDS) {
-      G.sat[g] = clamp(G.sat[g] - (G.sat[g] > 35 ? 1.0 : 0.3), 0, 100);
+      G.sat[g] = clamp(G.sat[g] - (G.sat[g] > 35 ? 1.0 : 0.3) + beauty, 0, 100);
     }
 
     // 4) 방치된 사례 악화
@@ -723,6 +768,8 @@ const Sim = (() => {
       if (!s.grantTries) s.grantTries = {};
       s.totalGrantWon = s.totalGrantWon || 0;
       s.totalHappinessBonus = s.totalHappinessBonus || 0;
+      if (!s.decor) s.decor = [];
+      s.totalDecor = s.totalDecor || 0;
       return s;
     } catch (e) { return null; }
   }
@@ -742,5 +789,6 @@ const Sim = (() => {
     GRANTS: DATA.GRANTS, getGrant, isGrantWon, grantCooldown, reviewGrant, applyGrant,
     isOwned, isParcelOwned, isParcelBuyable, landPrice, buyParcel,
     isRoad, hasRoadAccess, buildRoad, removeRoad,
+    getDecorDef, checkDecorSite, placeDecor, removeDecor, decorBeautyBonus,
   };
 })();

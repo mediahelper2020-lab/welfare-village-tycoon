@@ -8,6 +8,7 @@
   const canvas = document.getElementById('scene');
   let pendingBuildDefId = null;
   let roadSpent = 0;         // 이번 드래그로 깐 도로 비용 합계
+  let decorSpent = 0;        // 이번 드래그로 놓은 꾸미기 비용 합계
 
   /* ---------- 모드 ---------- */
   function startBuild(defId) {
@@ -29,6 +30,14 @@
     World.setMode({ type: 'road' });
     UI.closePanel();
     UI.showModeHint(`🛣️ <b>도로 건설</b> · 우리 땅 위를 끌어서 길을 이으세요 · 칸당 ${Sim.fmtWon(DATA.ROAD.cost)}`);
+  }
+
+  function startDecor(defId) {
+    const def = Sim.getDecorDef(defId);
+    if (Sim.state.budget < def.cost) { UI.toast('예산이 부족합니다.', 'err'); return; }
+    World.setMode({ type: 'decor', defId });
+    UI.closePanel();
+    UI.showModeHint(`${def.icon} <b>${def.name}</b> · 클릭하거나 끌어서 놓으세요 · ${Sim.fmtWon(def.cost)}`);
   }
 
   function startBulldoze() {
@@ -70,6 +79,10 @@
 
   function onRoadPaint(x, z) {
     if (Sim.isRoad(x, z)) return;
+    if (World.isHouseTile(x, z) || World.isDecorTile(x, z)) {
+      if (roadSpent === 0) UI.toast('그 자리에는 도로를 낼 수 없습니다.', 'err');
+      return;
+    }
     const r = Sim.buildRoad(x, z);
     if (!r.ok) {
       if (r.msg && roadSpent === 0) UI.toast(r.msg, 'err');
@@ -96,6 +109,39 @@
     UI.sfx.bad();
     Sim.save();
     UI.refresh();
+  }
+
+  function onDecorPaint(x, z, defId) {
+    const chk = World.canPlaceDecor(x, z);
+    if (!chk.ok) { if (decorSpent === 0) UI.toast(chk.msg, 'err'); return; }
+    const r = Sim.placeDecor(defId, x, z);
+    if (!r.ok) { if (decorSpent === 0) UI.toast(r.msg, 'err'); return; }
+    World.addDecor(r.inst);
+    decorSpent += Sim.getDecorDef(defId).cost;
+    UI.sfx.click();
+    UI.refresh();
+  }
+
+  function onDecorPaintEnd() {
+    if (!decorSpent) return;
+    UI.toast(`꾸미기 완료 · ${Sim.fmtWon(decorSpent)}`, 'ok');
+    decorSpent = 0;
+    Sim.save();
+    UI.refresh();
+  }
+
+  function onDecorClick(instId) {
+    const inst = Sim.state.decor.find(d => d.id === instId);
+    if (!inst) return;
+    const def = Sim.getDecorDef(inst.defId);
+    const r = Sim.removeDecor(instId);
+    if (!r.ok) return;
+    World.removeDecorInst(instId, inst);
+    UI.sfx.bad();
+    UI.toast(`${def.name} 철거 · ${Sim.fmtWon(r.refund)} 환급`);
+    Sim.save();
+    UI.refresh();
+    UI.rerenderPanel();
   }
 
   function onBuildingClick(instId) {
@@ -137,12 +183,14 @@
   World.init(canvas, {
     onTileClick, onBuildingClick, onLandClick,
     onRoadPaint, onRoadPaintEnd, onRoadRemove,
+    onDecorPaint, onDecorPaintEnd, onDecorClick,
   });
-  UI.init({ startBuild, startLand, startRoad, startBulldoze, cancelMode, demolish });
+  UI.init({ startBuild, startLand, startRoad, startDecor, startBulldoze, cancelMode, demolish });
 
   function bootWithState() {
     World.buildWorld();
     for (const inst of Sim.state.buildings) World.addBuilding(inst);
+    for (const inst of Sim.state.decor) World.addDecor(inst);
     UI.resetLogFeed();
     UI.refresh();
   }

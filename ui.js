@@ -143,6 +143,7 @@ const UI = (() => {
   /* ---------- 사이드 패널 ---------- */
   const PANELS = {
     build: () => renderBuild(),
+    decorate: () => renderDecorate(),
     programs: () => renderPrograms(),
     cases: () => renderCases(),
     stats: () => renderStats(),
@@ -266,6 +267,62 @@ const UI = (() => {
     $('#bulldozeBtn').onclick = () => { sfx.click(); hooks.startBulldoze(); };
   }
 
+  /* ---------- 꾸미기 ---------- */
+  function renderDecorate() {
+    const G = Sim.state;
+    $('#panelTitle').textContent = '🎨 마을 꾸미기';
+    const body = $('#panelBody');
+    const count = G.decor.length;
+
+    let html = `<p class="lede">나무·화단·벤치·조형물로 우리 마을만의 개성을 더해보세요.
+      도로에 접해 놓으면 벤치와 안내판 같은 소품이 저절로 도로 쪽을 바라봅니다.
+      나무처럼 저렴한 소품은 <b>끌어서 한 번에 여러 개</b> 놓을 수 있습니다.
+      꾸민 만큼 마을 만족도가 조금씩 올라갑니다.</p>
+
+      <div class="statgrid" style="margin-bottom:14px">
+        <div class="stattile"><div class="k">놓은 꾸밈 요소</div><div class="v num">${count}개</div></div>
+        <div class="stattile"><div class="k">꾸미기 지출</div><div class="v num">${fmt(G.totalDecor || 0)}</div></div>
+      </div>`;
+
+    for (const cat of Object.keys(DATA.DECOR_CATS)) {
+      const items = DATA.DECOR.filter(d => d.cat === cat);
+      if (!items.length) continue;
+      html += `<div class="secthead"><span>${esc(DATA.DECOR_CATS[cat])}</span></div>`;
+      for (const d of items) {
+        const afford = G.budget >= d.cost;
+        html += `
+        <div class="card">
+          <div class="row spread" style="align-items:flex-start">
+            <h3>${d.icon} ${esc(d.name)}</h3>
+            <span class="price">${fmt(d.cost)}</span>
+          </div>
+          <div class="desc">${esc(d.desc)}</div>
+          <div class="row spread" style="margin-top:10px">
+            <span class="muted">클릭 또는 드래그해서 배치</span>
+            <button class="btn small" data-decor="${d.id}" ${afford ? '' : 'disabled'}>
+              ${afford ? '놓기' : '예산 부족'}</button>
+          </div>
+        </div>`;
+      }
+    }
+
+    html += `
+      <div class="hr"></div>
+      <div class="card">
+        <div class="row spread">
+          <h3>🧨 꾸밈 요소 철거</h3>
+          <button class="btn small danger" id="undecorateBtn">철거 모드</button>
+        </div>
+        <div class="desc">시설·도로와 같은 철거 모드입니다. 비용의 절반을 환급받습니다.</div>
+      </div>`;
+
+    body.innerHTML = html;
+    stagger(body);
+    body.querySelectorAll('[data-decor]').forEach(btn =>
+      btn.onclick = () => { sfx.click(); hooks.startDecor(btn.dataset.decor); });
+    $('#undecorateBtn').onclick = () => { sfx.click(); hooks.startBulldoze(); };
+  }
+
   /* ---------- 프로그램 ---------- */
   function targetChip(t) {
     if (t === 'all') return `<span class="chip all"><i></i>전체 주민</span>`;
@@ -383,10 +440,7 @@ const UI = (() => {
       <label class="fl"><span>대상</span></label>
       <select id="pfTarget">
         <option value="all">전체 주민</option>
-        <option value="senior">독거노인</option>
-        <option value="disabled">발달장애인</option>
-        <option value="basic">기초생활수급자</option>
-        <option value="general">일반 주민</option>
+        ${DATA.GROUP_IDS.map(g => `<option value="${g}">${esc(DATA.GROUPS[g].label)}</option>`).join('')}
       </select>
 
       <label class="fl"><span>운영 시설</span></label>
@@ -899,6 +953,8 @@ const UI = (() => {
         <div class="stattile"><div class="k">도로 공사비</div><div class="v num">${fmt(G.totalRoad || 0)}</div></div>
         <div class="stattile"><div class="k">공모 사업비</div><div class="v num">${fmt(G.totalGrantWon || 0)}</div></div>
         <div class="stattile"><div class="k">행복지수 보조금</div><div class="v num">${fmt(G.totalHappinessBonus || 0)}</div></div>
+        <div class="stattile"><div class="k">꾸민 요소</div><div class="v num">${(G.decor || []).length}개</div></div>
+        <div class="stattile"><div class="k">꾸미기 지출</div><div class="v num">${fmt(G.totalDecor || 0)}</div></div>
         <div class="stattile"><div class="k">운영 프로그램</div><div class="v num">${G.programs.filter(p => p.active).length}개</div></div>
         <div class="stattile"><div class="k">종결 사례</div><div class="v num">${G.closedCases}건</div></div>
       </div>
@@ -1114,11 +1170,12 @@ const UI = (() => {
       </div>
       <p class="lead" style="text-align:center">
         인구 <b>500명</b>의 작은 마을에 사회복지 예산 <b style="color:var(--gold)">50억 원</b>이 교부되었습니다.<br>
-        주민의 절반은 <b>독거노인 · 발달장애인 · 기초생활수급자</b>입니다.
+        주민의 절반은 <b>독거노인 · 발달장애인 · 위기청소년 · 기초생활수급자 · 다문화이주민 · 북한이탈주민</b>입니다.
       </p>
       <div class="hr"></div>
       <div class="card"><h3>🗺️ 넓힌다</h3><div class="desc">부지를 매입해 마을을 넓히고, 직접 길을 내어 골목을 잇습니다.</div></div>
-      <div class="card"><h3>🏗️ 짓는다</h3><div class="desc">복지관·가족센터·경로당을 예산 안에서 건축합니다. 시설은 도로에 접해야 지을 수 있습니다.</div></div>
+      <div class="card"><h3>🏗️ 짓는다</h3><div class="desc">복지관·가족센터·경로당을 예산 안에서 건축합니다. 시설은 도로 쪽을 바라보게 서고, 주민의 집은 절대 헐리지 않습니다.</div></div>
+      <div class="card"><h3>🎨 꾸민다</h3><div class="desc">가로수·화단·벤치·분수대 같은 소품으로 나만의 예쁜 마을을 만듭니다.</div></div>
       <div class="card"><h3>📋 기획한다</h3><div class="desc">제목과 설명을 직접 써서 우리 마을만의 프로그램을 만듭니다. 참여자 수와 생생한 반응이 돌아옵니다.</div></div>
       <div class="card"><h3>🤝 연계한다</h3><div class="desc">사례관리로 주민 한 분 한 분의 취약점에 맞는 지역자원을 이어줍니다.</div></div>
       <p class="muted" style="margin-top:12px">

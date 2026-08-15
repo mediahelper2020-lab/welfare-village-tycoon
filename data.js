@@ -138,6 +138,41 @@ DATA.BUILDINGS = [
   },
 ];
 
+/* ---------- 꾸미기 요소 ----------
+ * 시설과 달리 예산에 큰 영향이 없는 소품들. 도로/부지 조건 없이 우리 땅 위 빈자리에 놓는다.
+ * kind는 world.js의 makeDecorMesh가 어떤 모양을 그릴지 정한다.
+ * cat: nature(자연) · street(거리 시설) · landmark(랜드마크).
+ */
+DATA.DECOR = [
+  { id: 'oakTree',    name: '가로수(활엽수)',  icon: '🌳', cost: 2e6,   cat: 'nature',   kind: 'tree', variant: 'oak',
+    desc: '길가에 그늘을 드리우는 활엽수.' },
+  { id: 'pineTree',   name: '소나무',          icon: '🌲', cost: 2e6,   cat: 'nature',   kind: 'tree', variant: 'pine',
+    desc: '사계절 푸른 침엽수.' },
+  { id: 'cherryTree', name: '벚꽃나무',        icon: '🌸', cost: 3e6,   cat: 'nature',   kind: 'tree', variant: 'cherry',
+    desc: '봄이면 온 마을이 분홍빛으로 물든다.' },
+  { id: 'flowerBed',  name: '화단',            icon: '🌷', cost: 1.5e6, cat: 'nature',   kind: 'flowerbed',
+    desc: '알록달록한 꽃으로 채운 작은 화단.' },
+  { id: 'bench',      name: '벤치',            icon: '🪑', cost: 1.2e6, cat: 'street',   kind: 'bench',
+    desc: '오가는 주민이 잠시 앉아 쉬어가는 자리.' },
+  { id: 'lamp',       name: '가로등',          icon: '💡', cost: 1.5e6, cat: 'street',   kind: 'lamp',
+    desc: '밤길을 밝혀주는 가로등.' },
+  { id: 'fence',      name: '울타리',          icon: '🚧', cost: 8e5,   cat: 'street',   kind: 'fence',
+    desc: '화단이나 경계를 아기자기하게 둘러주는 울타리.' },
+  { id: 'bikeRack',   name: '자전거 거치대',    icon: '🚲', cost: 1e6,   cat: 'street',   kind: 'bikerack',
+    desc: '자전거를 가지런히 세워두는 거치대.' },
+  { id: 'trashBin',   name: '쓰레기통',        icon: '🗑️', cost: 5e5,   cat: 'street',   kind: 'trashbin',
+    desc: '거리를 깨끗하게 유지해주는 분리수거함.' },
+  { id: 'signboard',  name: '환영 안내판',      icon: '🪧', cost: 1.5e6, cat: 'street',   kind: 'signboard',
+    desc: '우리 마을 이름을 새긴 안내판.' },
+  { id: 'fountain',   name: '분수대',          icon: '⛲', cost: 1.2e7, cat: 'landmark', kind: 'fountain',
+    desc: '광장 한가운데서 물줄기가 솟아오르는 분수대.' },
+  { id: 'statue',     name: '나눔 조형물',      icon: '🗿', cost: 1.6e7, cat: 'landmark', kind: 'statue',
+    desc: '이웃과 나누는 마음을 형상화한 마을 상징 조형물.' },
+  { id: 'gazebo',     name: '쉼터 정자',        icon: '⛩️', cost: 9e6,   cat: 'landmark', kind: 'gazebo',
+    desc: '햇볕과 비를 피해 이웃과 이야기 나누는 정자.' },
+];
+DATA.DECOR_CATS = { nature: '🌿 자연', street: '🚏 거리 시설', landmark: '🏛️ 랜드마크' };
+
 /* ---------- 프로그램 키워드 → 대상별 호응 배수 ---------- */
 DATA.KEYWORDS = [
   { id: 'health',  label: '건강',   words: ['건강', '운동', '체조', '걷기', '스트레칭', '재활', '요가'],

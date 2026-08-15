@@ -18,11 +18,15 @@ const World = (() => {
   let roadGroup = null;             // 도로 타일 메시
   let parcelGroup = null;           // 구역 경계 / 미보유 오버레이
 
-  let tiles = [];                   // 'grass' | 'house' | 'tree' | 'water' | 'building'
+  let tiles = [];                   // 'grass' | 'house' | 'tree' | 'water' | 'building' | 'decor'
   let buildingMeshes = {};          // instId -> Group
-  let decorMeshes = {};             // 'x,z' -> 나무/화단/민가 메시
+  let decorMeshes = {};             // 'x,z' -> 나무/화단/민가 메시 (지형 생성 시 흩뿌린 것들)
+  let decorInstMeshes = {};         // instId -> Group (플레이어가 놓은 꾸미기 요소)
   let roadMeshes = {};              // 'x,z' -> Group
   let parcelTiles = {};             // 'px,pz' -> {overlay, border}
+
+  // 방향이 있는 꾸미기 요소 — 근처에 도로가 있으면 그쪽을 바라보게 둔다
+  const DIRECTIONAL_DECOR_KINDS = new Set(['bench', 'lamp', 'fence', 'signboard', 'bikerack', 'trashbin']);
 
   let ghost = null, ghostDef = null, ghostValid = false, ghostTile = null, ghostReason = '';
   let hoverRing = null, hoveredInstId = null;
@@ -58,6 +62,24 @@ const World = (() => {
   const tileCenter = (ix, iz, size = 1) =>
     new THREE.Vector3((ix + size / 2) * TILE - HALF, 0, (iz + size / 2) * TILE - HALF);
   const inGrid = (x, z) => x >= 0 && z >= 0 && x < GRID && z < GRID;
+
+  // 발밑(x,z~x+size,z+size)을 둘러싼 도로 중 어느 쪽에 가장 많이 접했는지 찾아
+  // 그 방향을 [dx,dz] 단위 벡터로 돌려준다. 건물·방향성 있는 소품이 도로를 보고 서게 하는 데 쓴다.
+  function roadFacing(x, z, size) {
+    const counts = { n: 0, s: 0, e: 0, w: 0 };
+    const dirs = [[0, -1, 'n'], [0, 1, 's'], [1, 0, 'e'], [-1, 0, 'w']];
+    for (let dx = 0; dx < size; dx++) for (let dz = 0; dz < size; dz++) {
+      const tx = x + dx, tz = z + dz;
+      for (const [ox, oz, k] of dirs) {
+        const nx = tx + ox, nz = tz + oz;
+        if ((nx < x || nx >= x + size || nz < z || nz >= z + size) && Sim.isRoad(nx, nz)) counts[k]++;
+      }
+    }
+    let bestKey = null, bestCount = 0;
+    for (const k in counts) if (counts[k] > bestCount) { bestCount = counts[k]; bestKey = k; }
+    if (!bestKey) return null;
+    return { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] }[bestKey];
+  }
 
   /* =========================================================
    * 텍스처
@@ -346,9 +368,16 @@ const World = (() => {
       decorMeshes[key(x, z)] = h;
       terrainGroup.add(h);
     }
-    // 나무는 지도 전체에 흩뿌린다
+
+    // 가로수길 — 도로를 따라 나무를 심어 거리를 꾸민다 (직선 구간의 양옆에 듬성듬성)
+    for (const k of Sim.state.roads) {
+      const [rx, rz] = k.split(',').map(Number);
+      tryPlantRoadside(rx, rz);
+    }
+
+    // 나머지 지역에 나무를 흩뿌린다 (가로수길이 이미 상당수를 채웠으므로 개수는 줄인다)
     let n = 0, guard = 0;
-    while (n < 70 && guard++ < 2000) {
+    while (n < 50 && guard++ < 2000) {
       const x = irand(0, GRID - 1), z = irand(0, GRID - 1);
       if (tiles[x][z] !== 'grass' || roadSet.has(key(x, z))) continue;
       tiles[x][z] = 'tree';
@@ -369,6 +398,29 @@ const World = (() => {
       decorMeshes[key(x, z)] = bed;
       terrainGroup.add(bed);
       f++;
+    }
+  }
+
+  // (x,z) 도로 칸이 직선 구간이면, 진행 방향과 수직인 양옆 빈 칸에 가로수를 심는다.
+  // 교차로·막다른 길(양쪽 축 모두 이웃이 있거나 없는 경우)에는 심지 않는다.
+  function tryPlantRoadside(x, z) {
+    const nS = Sim.isRoad(x, z + 1), nN = Sim.isRoad(x, z - 1);
+    const nE = Sim.isRoad(x + 1, z), nW = Sim.isRoad(x - 1, z);
+    const horiz = nE || nW, vert = nN || nS;
+    if (horiz === vert) return;
+    const shoulders = horiz ? [[0, -1], [0, 1]] : [[-1, 0], [1, 0]];
+    for (const [dx, dz] of shoulders) {
+      const nx = x + dx, nz = z + dz;
+      if (!inGrid(nx, nz)) continue;
+      if (tiles[nx][nz] !== 'grass') continue;
+      if (!Sim.isOwned(nx, nz)) continue;
+      if (rng() > 0.62) continue;
+      tiles[nx][nz] = 'tree';
+      const c = tileCenter(nx, nz);
+      const t = makeTree(c, 'oak');
+      t.scale.multiplyScalar(0.82);
+      decorMeshes[key(nx, nz)] = t;
+      terrainGroup.add(t);
     }
   }
 
@@ -406,17 +458,17 @@ const World = (() => {
     return g;
   }
 
-  function makeTree(pos) {
+  function makeTree(pos, variant) {
     const g = new THREE.Group();
-    const pine = rng() < 0.3;
+    const kind = variant || (rng() < 0.3 ? 'pine' : 'oak');
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.2, 1.0, 6),
       new THREE.MeshLambertMaterial({ color: 0x7a5638 }));
     trunk.position.y = 0.5;
     trunk.castShadow = true;
     g.add(trunk);
-    const greens = [0x4e8038, 0x5b8f3f, 0x437030, 0x67a04a];
-    const col = greens[irand(0, 3)];
-    if (pine) {
+    if (kind === 'pine') {
+      const greens = [0x4e8038, 0x5b8f3f, 0x437030, 0x67a04a];
+      const col = greens[irand(0, 3)];
       for (let i = 0; i < 3; i++) {
         const cone = new THREE.Mesh(new THREE.ConeGeometry(1.05 - i * 0.26, 1.1, 7),
           new THREE.MeshLambertMaterial({ color: col, flatShading: true }));
@@ -424,7 +476,18 @@ const World = (() => {
         cone.castShadow = true;
         g.add(cone);
       }
+    } else if (kind === 'cherry') {
+      const pinks = [0xf3b8cf, 0xe89dc0, 0xf7cde0];
+      for (let i = 0; i < 2; i++) {
+        const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(rand(0.75, 1.05), 0),
+          new THREE.MeshLambertMaterial({ color: pinks[irand(0, 2)], flatShading: true }));
+        leaf.position.set(rand(-.3, .3), 1.5 + i * 0.5, rand(-.3, .3));
+        leaf.castShadow = true;
+        g.add(leaf);
+      }
     } else {
+      const greens = [0x4e8038, 0x5b8f3f, 0x437030, 0x67a04a];
+      const col = greens[irand(0, 3)];
       for (let i = 0; i < 2; i++) {
         const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(rand(0.75, 1.05), 0),
           new THREE.MeshLambertMaterial({ color: i ? col : (col + 0x060c04), flatShading: true }));
@@ -495,6 +558,186 @@ const World = (() => {
     g.position.copy(pos);
     if (dir) g.rotation.y = Math.atan2(dir[0], dir[1]);
     return g;
+  }
+
+  function makeFence(pos) {
+    const g = new THREE.Group();
+    const postMat = new THREE.MeshLambertMaterial({ color: 0xe8e2d0 });
+    const railMat = new THREE.MeshLambertMaterial({ color: 0xf2ede0 });
+    for (const ox of [-0.85, 0, 0.85]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.62, 0.09), postMat);
+      post.position.set(ox, 0.31, 0);
+      post.castShadow = true;
+      g.add(post);
+    }
+    for (const oy of [0.24, 0.46]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.06, 0.06), railMat);
+      rail.position.set(0, oy, 0);
+      g.add(rail);
+    }
+    g.position.copy(pos);
+    return g;
+  }
+
+  function makeBikeRack(pos) {
+    const g = new THREE.Group();
+    const mat = new THREE.MeshLambertMaterial({ color: 0x4a5560 });
+    for (const ox of [-0.5, 0, 0.5]) {
+      const loop = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.03, 6, 12, Math.PI), mat);
+      loop.rotation.x = Math.PI / 2;
+      loop.position.set(ox, 0.28, 0);
+      loop.castShadow = true;
+      g.add(loop);
+    }
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.05, 0.3),
+      new THREE.MeshLambertMaterial({ color: 0x8a8f93 }));
+    base.position.y = 0.03;
+    base.receiveShadow = true;
+    g.add(base);
+    g.position.copy(pos);
+    return g;
+  }
+
+  function makeTrashBin(pos) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.19, 0.5, 10),
+      new THREE.MeshLambertMaterial({ color: 0x3f6e52 }));
+    body.position.y = 0.28;
+    body.castShadow = true;
+    g.add(body);
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.05, 10),
+      new THREE.MeshLambertMaterial({ color: 0x2c5540 }));
+    lid.position.y = 0.54;
+    g.add(lid);
+    g.position.copy(pos);
+    return g;
+  }
+
+  function makeFountain(pos) {
+    const g = new THREE.Group();
+    const basin = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.15, 0.34, 16),
+      new THREE.MeshLambertMaterial({ color: 0xd8d2c2 }));
+    basin.position.y = 0.17;
+    basin.castShadow = basin.receiveShadow = true;
+    g.add(basin);
+    const water = new THREE.Mesh(new THREE.CylinderGeometry(0.92, 0.92, 0.08, 16),
+      new THREE.MeshPhongMaterial({ color: 0x5aa8d8, shininess: 100, specular: 0xbfe6ff, transparent: true, opacity: .92 }));
+    water.position.y = 0.36;
+    g.add(water);
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.7, 10),
+      new THREE.MeshLambertMaterial({ color: 0xcfc8b6 }));
+    pillar.position.y = 0.6;
+    pillar.castShadow = true;
+    g.add(pillar);
+    const top = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8),
+      new THREE.MeshPhongMaterial({ color: 0x7cc4ec, shininess: 90, transparent: true, opacity: .9 }));
+    top.position.y = 1.0;
+    g.add(top);
+    for (let i = 0; i < 8; i++) {
+      const drop = new THREE.Mesh(new THREE.SphereGeometry(0.03, 5, 4),
+        new THREE.MeshPhongMaterial({ color: 0xbfe6ff, transparent: true, opacity: .75 }));
+      const a = i / 8 * Math.PI * 2;
+      drop.position.set(Math.cos(a) * 0.5, 0.55 + Math.sin(i) * 0.1, Math.sin(a) * 0.5);
+      g.add(drop);
+    }
+    g.position.copy(pos);
+    return g;
+  }
+
+  function makeStatue(pos) {
+    const g = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.3, 1.0),
+      new THREE.MeshLambertMaterial({ color: 0xc9c2b0 }));
+    base.position.y = 0.15;
+    base.castShadow = base.receiveShadow = true;
+    g.add(base);
+    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.4, 0.7, 10),
+      new THREE.MeshLambertMaterial({ color: 0xd8d2c0 }));
+    pedestal.position.y = 0.65;
+    pedestal.castShadow = true;
+    g.add(pedestal);
+    // "나눔" 상징 — 맞잡은 마음을 단순한 형태로 표현
+    const symbolMat = new THREE.MeshLambertMaterial({ color: 0x8fae8a });
+    const heart = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 10), symbolMat);
+    heart.position.y = 1.28;
+    heart.scale.set(1, 1.15, 0.7);
+    heart.castShadow = true;
+    g.add(heart);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.05, 8, 16), symbolMat);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 1.0;
+    g.add(ring);
+    g.position.copy(pos);
+    return g;
+  }
+
+  function makeGazebo(pos) {
+    const g = new THREE.Group();
+    const woodMat = new THREE.MeshLambertMaterial({ color: 0xa2764f });
+    const roofMat = new THREE.MeshLambertMaterial({ color: 0xb5563f, flatShading: true });
+    const floor = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.05, 0.14, 8),
+      new THREE.MeshLambertMaterial({ color: 0xcfc3a6 }));
+    floor.position.y = 0.07;
+    floor.receiveShadow = true;
+    g.add(floor);
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.6, 6), woodMat);
+      post.position.set(Math.cos(a) * 0.92, 0.87, Math.sin(a) * 0.92);
+      post.castShadow = true;
+      g.add(post);
+    }
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(1.25, 0.85, 8), roofMat);
+    roof.position.y = 1.95;
+    roof.castShadow = true;
+    g.add(roof);
+    const bench = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.12, 8, 1, true),
+      new THREE.MeshLambertMaterial({ color: 0x8a6440, side: THREE.DoubleSide }));
+    bench.position.y = 0.5;
+    g.add(bench);
+    g.position.copy(pos);
+    return g;
+  }
+
+  function makeSignboard(pos, text) {
+    const g = new THREE.Group();
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 1.3, 8),
+      new THREE.MeshLambertMaterial({ color: 0x6b7280 }));
+    post.position.y = 0.65;
+    post.castShadow = true;
+    g.add(post);
+    const board = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.62, 0.06),
+      new THREE.MeshLambertMaterial({ color: 0xf7f4ec }));
+    board.position.y = 1.45;
+    board.castShadow = true;
+    g.add(board);
+    const label = makeLabelSprite(text || '🏘️ 환영합니다', 0xf0c674);
+    label.position.set(0, 1.46, 0.05);
+    label.scale.multiplyScalar(0.6);
+    g.add(label);
+    g.position.copy(pos);
+    return g;
+  }
+
+  /* =========================================================
+   * 꾸미기 요소 메시 — DATA.DECOR의 kind에 따라 알맞은 모양을 만든다
+   * ========================================================= */
+  function makeDecorMesh(def) {
+    const zero = new THREE.Vector3(0, 0, 0);
+    switch (def.kind) {
+      case 'tree': return makeTree(zero, def.variant);
+      case 'flowerbed': return makeFlowerBed(zero);
+      case 'bench': return makeBench(zero);
+      case 'lamp': return makeLamp(zero);
+      case 'fence': return makeFence(zero);
+      case 'bikerack': return makeBikeRack(zero);
+      case 'trashbin': return makeTrashBin(zero);
+      case 'fountain': return makeFountain(zero);
+      case 'statue': return makeStatue(zero);
+      case 'gazebo': return makeGazebo(zero);
+      case 'signboard': return makeSignboard(zero, '🏘️ ' + (Sim.state ? Sim.state.village : '환영합니다'));
+      default: return new THREE.Group();
+    }
   }
 
   /* =========================================================
@@ -575,7 +818,15 @@ const World = (() => {
     }
   }
 
-  function addRoad(x, z) { clearDecor(x, z); refreshRoadAround(x, z); }
+  function addRoad(x, z) {
+    clearDecor(x, z);
+    refreshRoadAround(x, z);
+    // 새로 놓인 구간과 그 이웃의 직선 여부가 바뀌었을 수 있으니 가로수를 다시 살핀다
+    [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dz]) => {
+      const nx = x + dx, nz = z + dz;
+      if (inGrid(nx, nz) && Sim.isRoad(nx, nz)) tryPlantRoadside(nx, nz);
+    });
+  }
   function removeRoadTile(x, z) { refreshRoadAround(x, z); }
 
   /* =========================================================
@@ -821,20 +1072,47 @@ const World = (() => {
   /* =========================================================
    * 배치 검사
    * ========================================================= */
-  // 3D 지형상의 제약 (물·기존 건물). 토지/도로 조건은 Sim.checkSite가 본다.
+  // 3D 지형상의 제약. 토지/도로 조건은 Sim.checkSite가 본다.
+  // 주민이 사는 집과 플레이어가 놓은 꾸미기 요소는 자리를 비워주지 않는다 —
+  // 건물을 지으려면 다른 빈자리를 찾아야 한다.
   function terrainFree(def, ix, iz) {
     for (let dx = 0; dx < def.size; dx++) for (let dz = 0; dz < def.size; dz++) {
       const x = ix + dx, z = iz + dz;
-      if (!inGrid(x, z)) return false;
-      if (tiles[x][z] !== 'grass' && tiles[x][z] !== 'tree' && tiles[x][z] !== 'house') return false;
+      if (!inGrid(x, z)) return { ok: false, msg: '지도 밖입니다.' };
+      const t = tiles[x][z];
+      if (t === 'water') return { ok: false, msg: '물 위에는 지을 수 없습니다.' };
+      if (t === 'house') return { ok: false, msg: '주민이 사는 집이 있는 자리입니다. 다른 곳에 지어주세요.' };
+      if (t === 'building') return { ok: false, msg: '이미 다른 시설이 있는 자리입니다.' };
+      if (t === 'decor') return { ok: false, msg: '꾸밈 요소가 있는 자리입니다. 먼저 철거해 주세요.' };
     }
-    return true;
+    return { ok: true };
   }
 
   function canPlace(def, ix, iz) {
-    if (!terrainFree(def, ix, iz)) return { ok: false, msg: '이 자리에는 지을 수 없습니다.' };
+    const t = terrainFree(def, ix, iz);
+    if (!t.ok) return t;
     return Sim.checkSite(def, ix, iz);
   }
+
+  /* ---------- 꾸미기 배치 검사 ---------- */
+  function terrainFreeForDecor(ix, iz) {
+    if (!inGrid(ix, iz)) return { ok: false, msg: '지도 밖입니다.' };
+    const t = tiles[ix][iz];
+    if (t === 'water') return { ok: false, msg: '물 위에는 놓을 수 없습니다.' };
+    if (t === 'house') return { ok: false, msg: '주민이 사는 집이 있는 자리입니다.' };
+    if (t === 'building') return { ok: false, msg: '이미 시설이 있는 자리입니다.' };
+    if (t === 'decor') return { ok: false, msg: '이미 다른 꾸밈 요소가 있습니다.' };
+    return { ok: true };
+  }
+
+  function canPlaceDecor(x, z) {
+    const t = terrainFreeForDecor(x, z);
+    if (!t.ok) return t;
+    return Sim.checkDecorSite(x, z);
+  }
+
+  function isHouseTile(x, z) { return inGrid(x, z) && tiles[x][z] === 'house'; }
+  function isDecorTile(x, z) { return inGrid(x, z) && tiles[x][z] === 'decor'; }
 
   function addBuilding(inst) {
     const def = Sim.getDef(inst.defId);
@@ -846,6 +1124,8 @@ const World = (() => {
     const g = makeBuildingMesh(def);
     const c = tileCenter(inst.x, inst.z, def.size);
     g.position.set(c.x, 0, c.z);
+    const facing = roadFacing(inst.x, inst.z, def.size);
+    if (facing) g.rotation.y = Math.atan2(facing[0], facing[1]);
     g.userData.instId = inst.id;
     scene.add(g);
     buildingMeshes[inst.id] = g;
@@ -870,14 +1150,43 @@ const World = (() => {
   }
 
   /* =========================================================
+   * 꾸미기 요소 배치/철거 (플레이어가 놓은 소품)
+   * ========================================================= */
+  function addDecor(inst) {
+    const def = DATA.DECOR.find(d => d.id === inst.defId);
+    clearDecor(inst.x, inst.z);   // 그 자리의 야생 나무·화단을 정리하고
+    tiles[inst.x][inst.z] = 'decor';
+    const g = makeDecorMesh(def);
+    const c = tileCenter(inst.x, inst.z);
+    g.position.set(c.x, 0, c.z);
+    const facing = roadFacing(inst.x, inst.z, 1);
+    if (DIRECTIONAL_DECOR_KINDS.has(def.kind) && facing) g.rotation.y = Math.atan2(facing[0], facing[1]);
+    else g.rotation.y = lrand(0, Math.PI * 2);
+    g.userData.instId = inst.id;
+    g.userData.pop = 0;
+    g.scale.set(0.01, 0.01, 0.01);
+    scene.add(g);
+    decorInstMeshes[inst.id] = g;
+    return g;
+  }
+
+  function removeDecorInst(instId, inst) {
+    const g = decorInstMeshes[instId];
+    if (!g) return;
+    scene.remove(g);
+    delete decorInstMeshes[instId];
+    if (inst) tiles[inst.x][inst.z] = 'grass';
+  }
+
+  /* =========================================================
    * 모드 / 고스트
    * ========================================================= */
   function setMode(m) {
     mode = m;
     if (ghost) { scene.remove(ghost); ghost = null; ghostDef = null; ghostTile = null; }
-    if (m.type === 'build') {
-      ghostDef = Sim.getDef(m.defId);
-      ghost = makeBuildingMesh(ghostDef, false);
+    if (m.type === 'build' || m.type === 'decor') {
+      ghostDef = m.type === 'build' ? Sim.getDef(m.defId) : DATA.DECOR.find(d => d.id === m.defId);
+      ghost = m.type === 'build' ? makeBuildingMesh(ghostDef, false) : makeDecorMesh(ghostDef);
       ghost.traverse(o => {
         if (o.isMesh) {
           o.material = o.material.clone();
@@ -911,11 +1220,16 @@ const World = (() => {
   function bindInput(canvas) {
     canvas.addEventListener('contextmenu', e => e.preventDefault());
 
+    const paintAt = (t) => {
+      if (!t) return;
+      if (mode.type === 'road') cbs.onRoadPaint && cbs.onRoadPaint(t.x, t.z);
+      else if (mode.type === 'decor') cbs.onDecorPaint && cbs.onDecorPaint(t.x, t.z, mode.defId);
+    };
+
     canvas.addEventListener('pointerdown', e => {
-      if (e.button === 0 && mode.type === 'road') {
+      if (e.button === 0 && (mode.type === 'road' || mode.type === 'decor')) {
         painting = true;
-        const t = pickGroundTile();
-        if (t) cbs.onRoadPaint && cbs.onRoadPaint(t.x, t.z);
+        paintAt(pickGroundTile());
         return;
       }
       if (e.button === 0 && mode.type !== 'none') return;
@@ -927,9 +1241,8 @@ const World = (() => {
       pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
       pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
-      if (painting) {                       // 드래그로 길 잇기
-        const t = pickGroundTile();
-        if (t) cbs.onRoadPaint && cbs.onRoadPaint(t.x, t.z);
+      if (painting) {                       // 드래그로 길/꾸미기 잇기
+        paintAt(pickGroundTile());
         return;
       }
       if (!dragging) return;
@@ -948,7 +1261,12 @@ const World = (() => {
       }
     });
 
-    const endPaint = () => { if (painting) { painting = false; cbs.onRoadPaintEnd && cbs.onRoadPaintEnd(); } };
+    const endPaint = () => {
+      if (!painting) return;
+      painting = false;
+      if (mode.type === 'road') cbs.onRoadPaintEnd && cbs.onRoadPaintEnd();
+      else if (mode.type === 'decor') cbs.onDecorPaintEnd && cbs.onDecorPaintEnd();
+    };
     canvas.addEventListener('pointerup', () => {
       endPaint();
       if (dragging && !dragging.moved && dragging.btn === 0 && mode.type === 'none') {
@@ -963,8 +1281,10 @@ const World = (() => {
       if (mode.type === 'build' && ghostTile) {
         cbs.onTileClick && cbs.onTileClick(ghostTile.x, ghostTile.z, ghostValid, ghostReason);
       } else if (mode.type === 'bulldoze') {
-        const hit = pickBuilding();
-        if (hit) { cbs.onBuildingClick && cbs.onBuildingClick(hit); return; }
+        const hitB = pickBuilding();
+        if (hitB) { cbs.onBuildingClick && cbs.onBuildingClick(hitB); return; }
+        const hitD = pickDecorInst();
+        if (hitD) { cbs.onDecorClick && cbs.onDecorClick(hitD); return; }
         const t = pickGroundTile();
         if (t && Sim.isRoad(t.x, t.z)) cbs.onRoadRemove && cbs.onRoadRemove(t.x, t.z);
       } else if (mode.type === 'land') {
@@ -983,6 +1303,15 @@ const World = (() => {
     raycaster.setFromCamera(pointer, camera);
     const meshes = [];
     Object.values(buildingMeshes).forEach(g =>
+      g.traverse(o => { if (o.isMesh) { o.userData.instId = g.userData.instId; meshes.push(o); } }));
+    const hits = raycaster.intersectObjects(meshes, false);
+    return hits.length ? hits[0].object.userData.instId : null;
+  }
+
+  function pickDecorInst() {
+    raycaster.setFromCamera(pointer, camera);
+    const meshes = [];
+    Object.values(decorInstMeshes).forEach(g =>
       g.traverse(o => { if (o.isMesh) { o.userData.instId = g.userData.instId; meshes.push(o); } }));
     const hits = raycaster.intersectObjects(meshes, false);
     return hits.length ? hits[0].object.userData.instId : null;
@@ -1150,23 +1479,43 @@ const World = (() => {
       }
     }
 
+    // 꾸미기 요소 등장 애니메이션
+    for (const id in decorInstMeshes) {
+      const g = decorInstMeshes[id];
+      if (g.userData.pop !== undefined && g.userData.pop < 1) {
+        g.userData.pop = Math.min(1, g.userData.pop + dt * 2.6);
+        const p = g.userData.pop;
+        const e = 1 - Math.pow(1 - p, 3);
+        g.scale.setScalar(e * (1 + Math.sin(p * Math.PI) * 0.12));
+        if (p >= 1) { g.scale.setScalar(1); delete g.userData.pop; }
+      }
+    }
+
     // 매입 가능 구역 표지를 살짝 띄운다
     for (const pk in parcelTiles) {
       const g = parcelTiles[pk];
       if (g.userData.tag) g.userData.tag.position.y = 3.4 + Math.sin(t * 2 + g.userData.parcel[0]) * 0.18;
     }
 
-    if (mode.type === 'build' && ghost) {
+    if ((mode.type === 'build' || mode.type === 'decor') && ghost) {
       const t2 = pickGroundTile();
       if (t2) {
-        const ix = t2.x - Math.floor((ghostDef.size - 1) / 2);
-        const iz = t2.z - Math.floor((ghostDef.size - 1) / 2);
+        const size = mode.type === 'build' ? ghostDef.size : 1;
+        const ix = t2.x - Math.floor((size - 1) / 2);
+        const iz = t2.z - Math.floor((size - 1) / 2);
         ghostTile = { x: ix, z: iz };
-        const chk = canPlace(ghostDef, ix, iz);
+        const chk = mode.type === 'build' ? canPlace(ghostDef, ix, iz) : canPlaceDecor(ix, iz);
         ghostValid = chk.ok;
         ghostReason = chk.msg || '';
-        const c = tileCenter(ix, iz, ghostDef.size);
+        const c = tileCenter(ix, iz, size);
         ghost.position.set(c.x, 0.02 + Math.sin(t * 3) * 0.06, c.z);
+        // 도로 방향으로 미리 회전해서 보여준다
+        const facing = roadFacing(ix, iz, size);
+        if (mode.type === 'build') {
+          ghost.rotation.y = facing ? Math.atan2(facing[0], facing[1]) : 0;
+        } else if (DIRECTIONAL_DECOR_KINDS.has(ghostDef.kind) && facing) {
+          ghost.rotation.y = Math.atan2(facing[0], facing[1]);
+        }
         ghost.visible = true;
         const tint = ghostValid ? 0x2f7a3f : 0x8a2020;
         ghost.traverse(o => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(tint); });
@@ -1190,7 +1539,8 @@ const World = (() => {
           hoverRing.scale.setScalar(1);
           hoverRing.position.set(t2.point.x, 0.26, t2.point.z);
           const ok = mode.type === 'road'
-            ? (Sim.isOwned(t2.x, t2.z) && !Sim.isRoad(t2.x, t2.z) && tiles[t2.x][t2.z] !== 'building' && tiles[t2.x][t2.z] !== 'water')
+            ? (Sim.isOwned(t2.x, t2.z) && !Sim.isRoad(t2.x, t2.z) && tiles[t2.x][t2.z] !== 'building'
+              && tiles[t2.x][t2.z] !== 'water' && tiles[t2.x][t2.z] !== 'house' && tiles[t2.x][t2.z] !== 'decor')
             : true;
           hoverRing.material.color.setHex(mode.type === 'bulldoze' ? 0xff6b6b : (ok ? 0x6ee0b8 : 0xff6b6b));
         }
@@ -1225,8 +1575,17 @@ const World = (() => {
   return {
     init, buildWorld, update, resize, setMode, getMode,
     addBuilding, removeBuilding, canPlace,
+    addDecor, removeDecorInst, canPlaceDecor, isHouseTile, isDecorTile,
     addRoad, removeRoadTile, refreshRoads, refreshParcels,
     focusCamera, syncVillagerCount,
     get GRID() { return GRID; },
+    // 읽기 전용 점검용 접근자 (자동화 테스트/디버깅에 사용, 게임 로직에는 영향 없음)
+    __debug: {
+      get buildingMeshes() { return buildingMeshes; },
+      get decorInstMeshes() { return decorInstMeshes; },
+      get tiles() { return tiles; },
+      get ghostTile() { return ghostTile; },
+      get ghostValid() { return ghostValid; },
+    },
   };
 })();
