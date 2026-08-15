@@ -142,6 +142,14 @@ const UI = (() => {
   function resetLogFeed() { renderedLogCount = 0; $('#logfeed').innerHTML = ''; }
 
   /* ---------- 사이드 패널 ---------- */
+  const PANELS = {
+    build: () => renderBuild(),
+    programs: () => renderPrograms(),
+    cases: () => renderCases(),
+    stats: () => renderStats(),
+    rank: () => renderRank(),
+  };
+
   function openPanel(name) {
     const first = currentPanel !== name;
     currentPanel = name;
@@ -150,7 +158,7 @@ const UI = (() => {
     if (first) { panel.style.animation = 'none'; void panel.offsetWidth; panel.style.animation = ''; }
     document.querySelectorAll('#toolbar .tbtn[data-panel]').forEach(b =>
       b.classList.toggle('on', b.dataset.panel === name));
-    ({ build: renderBuild, programs: renderPrograms, cases: renderCases, stats: renderStats }[name])();
+    PANELS[name]();
     if (first) $('#panelBody').scrollTop = 0;
   }
   function closePanel() {
@@ -160,8 +168,10 @@ const UI = (() => {
   }
   function rerenderPanel() {
     if (!currentPanel) return;
+    // 랭킹은 달이 바뀔 때마다 서버를 다시 부르지 않는다 (새로고침 버튼으로 갱신)
+    if (currentPanel === 'rank') return;
     const keep = $('#panelBody').scrollTop;
-    ({ build: renderBuild, programs: renderPrograms, cases: renderCases, stats: renderStats }[currentPanel])();
+    PANELS[currentPanel]();
     $('#panelBody').scrollTop = keep;
   }
 
@@ -569,6 +579,141 @@ const UI = (() => {
     });
   }
 
+  /* ---------- 랭킹 ---------- */
+  let myEntryId = store.get('wt_rank_id') || null;
+
+  function renderRank() {
+    const G = Sim.state;
+    $('#panelTitle').textContent = '🏆 마을 랭킹';
+    const body = $('#panelBody');
+
+    body.innerHTML = `
+      <p class="lede">다른 참가자들이 만든 마을과 총점을 겨뤄 보세요.
+        마을 데이터는 서버로 가지 않습니다 — <b>닉네임과 점수 몇 줄</b>만 올라갑니다.</p>
+
+      <div class="card">
+        <div class="row spread" style="align-items:flex-start">
+          <h3>내 마을 · ${esc(G.village)}</h3>
+          <span class="price">${Sim.score().toLocaleString()}점</span>
+        </div>
+        <div class="muted" style="margin-top:6px">
+          인구 ${Sim.totalPop().toLocaleString()}명 · 만족도 ${Sim.avgSat().toFixed(0)}점
+          · 종결사례 ${G.closedCases}건 · ${G.turn}개월차
+        </div>
+        <button class="btn wide" id="rankSubmitBtn" style="margin-top:11px">
+          ${myEntryId ? '점수 다시 올리기' : '내 점수 올리기'}</button>
+      </div>
+
+      <div class="secthead"><span>순위표 · 상위 20</span>
+        <button class="btn small ghostb" id="rankReload">새로고침</button>
+      </div>
+      <div id="rankList"><div class="emptybox"><p>불러오는 중…</p></div></div>`;
+
+    $('#rankSubmitBtn').onclick = () => { sfx.click(); openRankSubmit(); };
+    $('#rankReload').onclick = () => { sfx.click(); loadRankList(); };
+    loadRankList();
+  }
+
+  async function loadRankList() {
+    const el = $('#rankList');
+    if (!el) return;
+    const r = await Leaderboard.top(20);
+    if (!el.isConnected) return;                 // 그 사이 패널이 닫혔다면 그만
+    if (!r.ok) {
+      el.innerHTML = `<div class="emptybox">
+        <div class="em">📡</div>
+        <p>${esc(r.msg)}</p>
+      </div>`;
+      return;
+    }
+    const rows = r.data || [];
+    if (!rows.length) {
+      el.innerHTML = `<div class="emptybox">
+        <div class="em">🥇</div>
+        <p>아직 등록된 기록이 없습니다.<br>첫 번째 마을이 되어 보세요!</p>
+      </div>`;
+      return;
+    }
+    const medal = ['🥇', '🥈', '🥉'];
+    el.innerHTML = rows.map((e, i) => `
+      <div class="rankrow ${i < 3 ? 'top' + (i + 1) : ''} ${e.id === myEntryId ? 'me' : ''}">
+        <span class="rk">${i < 3 ? medal[i] : i + 1}</span>
+        <span class="who">
+          <div class="nm">${esc(e.nickname)}${e.id === myEntryId ? ' <span class="chip owned">나</span>' : ''}</div>
+          <div class="sub">${esc(e.village)} · 인구 ${Number(e.pop).toLocaleString()}명
+            · 만족도 ${Number(e.sat).toFixed(0)}점 · 사례 ${e.closed_cases}건</div>
+        </span>
+        <span class="pt">${Number(e.score).toLocaleString()}<small>${e.months}개월차</small></span>
+      </div>`).join('');
+  }
+
+  function openRankSubmit() {
+    const G = Sim.state;
+    const nick = store.get('wt_nickname') || '';
+    const m = showModal(`
+      <h2>🏆 랭킹에 점수 올리기</h2>
+      <p class="lead">아래 값이 순위표에 <b>공개</b>됩니다. 마을 세이브와 프로그램 내용은 올라가지 않습니다.</p>
+
+      <div class="statgrid" style="margin-top:16px">
+        <div class="stattile" style="grid-column:1/-1">
+          <div class="k">총점</div>
+          <div class="v num" style="font-size:24px;color:var(--gold)">${Sim.score().toLocaleString()}점</div>
+        </div>
+        <div class="stattile"><div class="k">인구</div><div class="v num">${Sim.totalPop().toLocaleString()}명</div></div>
+        <div class="stattile"><div class="k">만족도</div><div class="v num">${Sim.avgSat().toFixed(0)}점</div></div>
+        <div class="stattile"><div class="k">종결사례</div><div class="v num">${G.closedCases}건</div></div>
+        <div class="stattile"><div class="k">경과</div><div class="v num">${G.turn}개월</div></div>
+      </div>
+
+      <label class="fl"><span>닉네임</span><span class="hint">최대 12자</span></label>
+      <input type="text" id="rkNick" maxlength="12" value="${esc(nick)}"
+             placeholder="예) 복지새내기" autocomplete="off" />
+      <p class="muted" style="margin-top:8px">
+        닉네임과 마을 이름은 다른 참가자에게 그대로 보입니다.
+        실명이나 근무지처럼 개인을 알아볼 수 있는 정보는 쓰지 마세요.
+      </p>
+
+      <div class="modal-actions">
+        <button class="btn ghostb" id="rkCancel">취소</button>
+        <button class="btn" id="rkGo">올리기</button>
+      </div>
+    `);
+
+    $('#rkCancel').onclick = closeModal;
+    $('#rkGo').onclick = async () => {
+      const nickname = $('#rkNick').value.trim();
+      if (!nickname) { toast('닉네임을 입력해 주세요.', 'err'); return; }
+      const btn = $('#rkGo');
+      btn.disabled = true;
+      btn.textContent = '올리는 중…';
+
+      const r = await Leaderboard.submit({
+        nickname,
+        village: G.village.slice(0, 12),
+        score: Sim.score(),
+        pop: Sim.totalPop(),
+        sat: Math.round(Sim.avgSat() * 10) / 10,
+        closed_cases: G.closedCases,
+        months: G.turn,
+      });
+
+      if (!r.ok) {
+        btn.disabled = false;
+        btn.textContent = '올리기';
+        toast(r.msg, 'err');
+        return;
+      }
+      const saved = Array.isArray(r.data) ? r.data[0] : r.data;
+      if (saved && saved.id) { myEntryId = saved.id; store.set('wt_rank_id', saved.id); }
+      store.set('wt_nickname', nickname);
+      sfx.good();
+      closeModal();
+      toast('순위표에 등록되었습니다!', 'ok');
+      if (currentPanel === 'rank') renderRank();
+    };
+    setTimeout(() => $('#rkNick').focus(), 60);
+  }
+
   /* ---------- 통계 ---------- */
   let statsAsTable = false;
   function renderStats() {
@@ -857,8 +1002,12 @@ const UI = (() => {
         <div class="stattile"><div class="k">만든 프로그램</div><div class="v num">${G.programs.length}개</div></div>
       </div>
       <p class="muted" style="margin-top:14px; text-align:center">게임은 계속됩니다. 더 큰 복지도시를 만들어 보세요!</p>
-      <div class="modal-actions"><button class="btn" onclick="UI.closeModal()">계속하기</button></div>
+      <div class="modal-actions">
+        <button class="btn ghostb" id="winRank">🏆 랭킹에 올리기</button>
+        <button class="btn" onclick="UI.closeModal()">계속하기</button>
+      </div>
     `);
+    $('#winRank').onclick = () => openRankSubmit();
   }
 
   function openMenu() {
