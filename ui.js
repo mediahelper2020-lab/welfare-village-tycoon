@@ -19,6 +19,7 @@ const UI = (() => {
   let renderedLogCount = 0;
   let lastBudget = null;
   let lastScore = null;
+  let lastPop = null;
   let hooks = {};
 
   /* ---------- 로컬 저장소 (차단된 환경에서도 죽지 않도록) ---------- */
@@ -104,8 +105,19 @@ const UI = (() => {
     scEl.textContent = sc.toLocaleString();
     lastScore = sc;
 
-    $('#mPop').textContent = pop.toLocaleString() + '명';
+    const mPop = $('#mPop');
+    mPop.textContent = pop.toLocaleString() + '명';
     $('#mPopBar').style.width = Math.min(100, pop / Sim.GOAL.pop * 100) + '%';
+    if (lastPop !== null && pop > lastPop) {
+      const delta = pop - lastPop;
+      mPop.classList.remove('grow'); void mPop.offsetWidth; mPop.classList.add('grow');
+      const barWrap = $('#mPopBar').parentElement;
+      barWrap.classList.remove('grow'); void barWrap.offsetWidth; barWrap.classList.add('grow');
+      const dEl = $('#mPopDelta');
+      dEl.textContent = `+${delta.toLocaleString()}`;
+      dEl.classList.remove('show'); void dEl.offsetWidth; dEl.classList.add('show');
+    }
+    lastPop = pop;
     $('#mSat').textContent = sat.toFixed(0) + '점';
     $('#mSatBar').style.width = sat + '%';
     $('#mCase').textContent = G.closedCases.toLocaleString() + '건';
@@ -122,7 +134,7 @@ const UI = (() => {
     badge.style.display = nOpen ? '' : 'none';
     badge.textContent = nOpen;
 
-    if (window.World && World.syncVillagerCount) World.syncVillagerCount(pop);
+    if (typeof World !== 'undefined' && World.syncVillagerCount) World.syncVillagerCount(pop);
     renderLog();
   }
 
@@ -1317,9 +1329,14 @@ const UI = (() => {
     if (!Sim.state) return;
     sfx.month();
     const wasWon = Sim.state.won;
-    Sim.nextMonth();
+    const { news } = Sim.nextMonth();
     refresh();
     rerenderPanel();
+    const moved = news.find(n => n.kind === 'move');
+    if (moved) {
+      toast(moved.text, 'ok');
+      if (typeof World !== 'undefined' && World.celebrateArrival) World.celebrateArrival(moved.count || 1);
+    }
     if (Sim.state.won && !wasWon) showVictory();
   }
 

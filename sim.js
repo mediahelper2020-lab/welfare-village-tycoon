@@ -745,7 +745,7 @@ const Sim = (() => {
         G.pop[vg] += vulnerable;
         const line = pick(DATA.MIGRATION_LINES).replace('{n}', persons);
         addLog('move', '🏡 ' + line);
-        news.push({ kind: 'move', text: line });
+        news.push({ kind: 'move', text: line, count: persons });
       }
     }
 

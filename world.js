@@ -31,6 +31,9 @@ const World = (() => {
   let ghost = null, ghostDef = null, ghostValid = false, ghostTile = null, ghostReason = '';
   let hoverRing = null, hoveredInstId = null;
   let villagers = [];
+  let celebrants = [];         // 이주 소식이 뜰 때 잠깐 등장했다 사라지는 "환영" 주민들
+  let lastSyncedPop = null;    // 인구가 실제로 늘어난 시점을 구분하는 데 씀 (초기 스폰과 구별)
+  let arrivalFx = [];          // 새 주민이 도착할 때 잠깐 보이는 환영 링 이펙트
   let clouds = [];
   let cbs = {};
   let mode = { type: 'none' };
@@ -262,7 +265,10 @@ const World = (() => {
     disposeGroup(terrainGroup); disposeGroup(roadGroup); disposeGroup(parcelGroup);
     villagers.forEach(v => scene.remove(v));
     Object.values(buildingMeshes).forEach(g => scene.remove(g));
+    arrivalFx.forEach(fx => { scene.remove(fx.mesh); fx.mesh.geometry.dispose(); fx.mesh.material.dispose(); });
+    celebrants.forEach(v => scene.remove(v));
     villagers = []; buildingMeshes = {}; decorMeshes = {}; roadMeshes = {}; parcelTiles = {};
+    celebrants = []; arrivalFx = []; lastSyncedPop = null;
 
     terrainGroup = new THREE.Group(); scene.add(terrainGroup);
     roadGroup = new THREE.Group(); scene.add(roadGroup);
@@ -1433,8 +1439,36 @@ const World = (() => {
       g.add(cane);
     }
     g.scale.setScalar(scale);
-    g.userData = { target: null, speed: elder ? lrand(0.7, 1.1) : lrand(1.1, 2.0), phase: lrand(0, 6.28), pause: 0 };
+    g.userData = { target: null, speed: elder ? lrand(0.7, 1.1) : lrand(1.1, 2.0), phase: lrand(0, 6.28), pause: 0, baseScale: scale };
     return g;
+  }
+
+  // 새 주민이 막 도착했을 때 발밑에 잠깐 번지는 환영 링
+  function spawnArrivalRing(pos) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.12, 0.5, 28),
+      new THREE.MeshBasicMaterial({ color: 0x6ee0b8, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(pos.x, 0.06, pos.z);
+    terrainGroup.add(ring);
+    arrivalFx.push({ mesh: ring, t: 0 });
+  }
+
+  function updateArrivalFx(dt) {
+    for (let i = arrivalFx.length - 1; i >= 0; i--) {
+      const fx = arrivalFx[i];
+      fx.t += dt;
+      const p = Math.min(1, fx.t / 0.9);
+      fx.mesh.scale.setScalar(1 + p * 6);
+      fx.mesh.material.opacity = 0.85 * (1 - p);
+      if (p >= 1) {
+        terrainGroup.remove(fx.mesh);
+        fx.mesh.geometry.dispose();
+        fx.mesh.material.dispose();
+        arrivalFx.splice(i, 1);
+      }
+    }
   }
 
   function placeVillager(v) {
@@ -1456,13 +1490,21 @@ const World = (() => {
 
   function syncVillagerCount(pop) {
     const want = THREE.MathUtils.clamp(Math.round(pop / 14), 24, 70);
+    // 처음 스폰이 아니라 실제로 인구가 늘어난 경우에만 도착 연출을 보여준다
+    const grew = lastSyncedPop !== null && pop > lastSyncedPop;
     while (villagers.length < want) {
       const v = makeVillager();
       placeVillager(v);
+      if (grew) {
+        v.userData.arrive = 0;
+        v.scale.setScalar(0.01);
+        spawnArrivalRing(v.position);
+      }
       scene.add(v);
       villagers.push(v);
     }
     while (villagers.length > want) scene.remove(villagers.pop());
+    lastSyncedPop = pop;
   }
 
   function pickDestination() {
@@ -1479,27 +1521,64 @@ const World = (() => {
     return new THREE.Vector3(c.x + lrand(-1.2, 1.2), 0, c.z + lrand(-1.2, 1.2));
   }
 
+  // 주민 한 명의 이동/등장 애니메이션을 한 프레임 진행한다.
+  // villagers(상시 인구 표현)와 celebrants(이주 환영 연출) 둘 다 이 함수를 같이 쓴다.
+  function stepVillager(v, dt, t) {
+    const u = v.userData;
+    if (u.arrive !== undefined && u.arrive < 1) {
+      u.arrive = Math.min(1, u.arrive + dt * 1.6);
+      const e = 1 - Math.pow(1 - u.arrive, 3);
+      v.scale.setScalar((u.baseScale || 1) * e);
+      if (u.arrive >= 1) delete u.arrive;
+    }
+    if (u.pause > 0) { u.pause -= dt; v.position.y = 0; return; }
+    if (!u.target) { u.target = pickDestination(); if (!u.target) return; }
+    const dir = u.target.clone().sub(v.position);
+    dir.y = 0;
+    const dist = dir.length();
+    if (dist < 0.35) {
+      u.target = null;
+      if (Math.random() < 0.35) u.pause = lrand(1.5, 5);
+      return;
+    }
+    dir.normalize();
+    v.position.addScaledVector(dir, u.speed * dt);
+    const want = Math.atan2(dir.x, dir.z);
+    let diff = want - v.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    v.rotation.y += diff * Math.min(1, dt * 9);
+    v.position.y = Math.abs(Math.sin(t * 7 + u.phase)) * 0.07;
+  }
+
   function updateVillagers(dt, t) {
-    for (const v of villagers) {
+    for (const v of villagers) stepVillager(v, dt, t);
+
+    for (let i = celebrants.length - 1; i >= 0; i--) {
+      const v = celebrants[i];
+      stepVillager(v, dt, t);
       const u = v.userData;
-      if (u.pause > 0) { u.pause -= dt; v.position.y = 0; continue; }
-      if (!u.target) { u.target = pickDestination(); if (!u.target) continue; }
-      const dir = u.target.clone().sub(v.position);
-      dir.y = 0;
-      const dist = dir.length();
-      if (dist < 0.35) {
-        u.target = null;
-        if (Math.random() < 0.35) u.pause = lrand(1.5, 5);
-        continue;
+      if (u.arrive === undefined) {           // 등장 연출이 끝난 뒤부터 수명이 줄어든다
+        u.life -= dt;
+        if (u.life < 1.2) v.scale.setScalar(Math.max(0, u.life / 1.2) * (u.baseScale || 1));
+        if (u.life <= 0) { scene.remove(v); celebrants.splice(i, 1); }
       }
-      dir.normalize();
-      v.position.addScaledVector(dir, u.speed * dt);
-      const want = Math.atan2(dir.x, dir.z);
-      let diff = want - v.rotation.y;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      v.rotation.y += diff * Math.min(1, dt * 9);
-      v.position.y = Math.abs(Math.sin(t * 7 + u.phase)) * 0.07;
+    }
+  }
+
+  // 이주 소식이 뜰 때 도로변에 잠깐 나타났다 사라지는 환영 인파 — 인구가 늘어난 것을
+  // 눈으로 바로 확인할 수 있게 하는 연출. 상시 인구 표현(villagers)과는 별개로 동작한다.
+  function celebrateArrival(persons) {
+    const count = THREE.MathUtils.clamp(Math.round(persons / 2), 1, 6);
+    for (let i = 0; i < count; i++) {
+      const v = makeVillager();
+      placeVillager(v);
+      v.userData.arrive = 0;
+      v.userData.life = lrand(9, 13);
+      v.scale.setScalar(0.01);
+      spawnArrivalRing(v.position);
+      scene.add(v);
+      celebrants.push(v);
     }
   }
 
@@ -1622,6 +1701,7 @@ const World = (() => {
     }
 
     updateVillagers(dt, t);
+    updateArrivalFx(dt);
     renderer.render(scene, camera);
   }
 
@@ -1643,7 +1723,7 @@ const World = (() => {
     addDecor, removeDecorInst, canPlaceDecor, isHouseTile, isDecorTile,
     canPlaceHouseMove, pickHouseTile, moveHouseMesh,
     addRoad, removeRoadTile, refreshRoads, refreshParcels,
-    focusCamera, syncVillagerCount,
+    focusCamera, syncVillagerCount, celebrateArrival,
     get GRID() { return GRID; },
     // 읽기 전용 점검용 접근자 (자동화 테스트/디버깅에 사용, 게임 로직에는 영향 없음)
     __debug: {
@@ -1653,6 +1733,9 @@ const World = (() => {
       get ghostTile() { return ghostTile; },
       get ghostValid() { return ghostValid; },
       get decorMeshes() { return decorMeshes; },
+      get villagers() { return villagers; },
+      get celebrants() { return celebrants; },
+      get arrivalFx() { return arrivalFx; },
       // 타일 좌표 -> 화면 픽셀 좌표 (자동화 테스트에서 클릭 지점을 계산하는 용도)
       projectTile(x, z) {
         const v = tileCenter(x, z).project(camera);
