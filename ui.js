@@ -959,7 +959,7 @@ const UI = (() => {
     body.innerHTML = `
       <div class="statgrid">
         <div class="stattile" style="grid-column:1/-1">
-          <div class="k">총점 · 인구 ${pop.toLocaleString()} + 만족도 ${Sim.avgSat().toFixed(0)}×20 + 종결사례 ${G.closedCases}×100</div>
+          <div class="k">총점 · 인구 ${pop.toLocaleString()} + 만족도 ${Sim.avgSat().toFixed(0)}×20 + 종결사례 ${G.closedCases}×100${G.awardScore ? ` + 수상 ${G.awardScore.toLocaleString()}` : ''}</div>
           <div class="v num" style="font-size:24px;color:var(--gold)">${Sim.score().toLocaleString()}점</div>
         </div>
         <div class="stattile"><div class="k">인구</div><div class="v num">${pop.toLocaleString()}명</div></div>
@@ -1010,6 +1010,24 @@ const UI = (() => {
             <span class="track"><i style="width:${G.pop[gid] / pop * 100}%;background:${g.color}"></i></span>
             <span class="vv num">${G.pop[gid].toLocaleString()}명</span></div>`;
         }).join('')}
+      </div>
+
+      <div class="chartbox">
+        <h4>🏛️ 보건복지부 포상</h4>
+        ${DATA.AWARDS.map(a => {
+          const n = (G.awardCounts || {})[a.id] || 0;
+          return `<div class="awardrow ${n ? 'won' : ''}">
+            <span class="ic">${a.icon}</span>
+            <span class="tx">
+              <div class="nm">${esc(a.name)} <span class="muted">· ${esc(a.org)}</span></div>
+              <div class="cond muted">${esc(a.cond)}</div>
+            </span>
+            <span class="ct">${n ? `${n}회 수상` : '미수상'}</span>
+          </div>`;
+        }).join('')}
+        <div class="muted" style="margin-top:8px">
+          누적 포상금 ${fmt(G.totalAwardPrize || 0)} · 누적 점수 보너스 ${(G.awardScore || 0).toLocaleString()}점
+        </div>
       </div>`;
 
     $('#statTableBtn').onclick = () => { statsAsTable = !statsAsTable; renderStats(); };
@@ -1222,6 +1240,25 @@ const UI = (() => {
     `);
   }
 
+  /* ---------- 보건복지부 포상 ---------- */
+  function showAwardModal(awardId) {
+    const def = Sim.getAward(awardId);
+    if (!def) return;
+    const count = Sim.state.awardCounts[awardId] || 1;
+    showModal(`
+      <h2>${def.icon} ${esc(def.name)}</h2>
+      <p class="lead"><b>${esc(def.org)}</b>가 ${esc(Sim.state.village)}에 수여합니다${count > 1 ? ` (${count}번째 수상)` : ''}.</p>
+      <p class="muted" style="margin-top:6px">${esc(def.desc)}</p>
+      <div class="statgrid" style="margin-top:16px">
+        <div class="stattile"><div class="k">포상금</div><div class="v num" style="color:var(--gold)">${fmt(def.prize)}</div></div>
+        <div class="stattile"><div class="k">점수 보너스</div><div class="v num" style="color:var(--good)">+${def.scoreBonus.toLocaleString()}점</div></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" onclick="UI.closeModal()">영광입니다!</button>
+      </div>
+    `);
+  }
+
   /* ---------- 인트로 / 승리 / 메뉴 ---------- */
   function showIntro(hasSave, onNew, onContinue) {
     showModal(`
@@ -1337,6 +1374,12 @@ const UI = (() => {
       toast(moved.text, 'ok');
       if (typeof World !== 'undefined' && World.celebrateArrival) World.celebrateArrival(moved.count || 1);
     }
+    const awards = news.filter(n => n.kind === 'award');
+    if (awards.length) {
+      sfx.good();
+      awards.slice(1).forEach(a => toast(`${a.text}`, 'ok'));
+      setTimeout(() => showAwardModal(awards[0].awardId), moved ? 300 : 0);
+    }
     if (Sim.state.won && !wasWon) showVictory();
   }
 
@@ -1381,7 +1424,7 @@ const UI = (() => {
     openPanel, closePanel, rerenderPanel, resetLogFeed,
     showModal, closeModal, isModalOpen,
     showIntro, showVictory, openMenu, openBuildingInfo, openHouseInfo,
-    showMissionStart, showMissionComplete,
+    showMissionStart, showMissionComplete, showAwardModal,
     showModeHint, hideModeHint, doNextMonth,
   };
 })();

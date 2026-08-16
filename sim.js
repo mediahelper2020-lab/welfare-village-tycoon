@@ -83,6 +83,12 @@ const Sim = (() => {
       totalDecor: 0,
       houses: [],          // {x, z, wall, roof} — 원래 살던 주민의 집 (이사 가능)
       mission: { active: false, done: false },   // 주민커뮤니티센터 건립 시 시작되는 미션
+      awards: [],          // {id, turn, count} — 수여받은 보건복지부 포상 이력
+      awardCounts: {},     // {awardId: 수여 횟수}
+      awardScore: 0,       // 포상으로 얻은 누적 점수 보너스
+      totalAwardPrize: 0,  // 포상금 누계
+      villageGoodStreak: 0,        // 평균 만족도가 기준을 계속 넘긴 연속 개월 수
+      programExcellentStreak: 0,   // 프로그램·사례관리 만족도가 기준을 계속 넘긴 연속 개월 수
       programs: [],        // 프로그램 객체
       cases: [],           // 사례 객체
       closedCases: 0,
@@ -274,6 +280,7 @@ const Sim = (() => {
       totalPop() * SCORE_W.pop
       + avgSat() * SCORE_W.sat
       + G.closedCases * SCORE_W.closed
+      + (G.awardScore || 0)
     );
   }
 
@@ -677,6 +684,54 @@ const Sim = (() => {
     return { ok: true, result };
   }
 
+  /* =========================================================
+   * 보건복지부 포상
+   * 신청하지 않는다 — 마을이 일정 기간 계속 좋은 상태를 유지하면 매달 진행 상황을
+   * 지켜보다가 자동으로 수여된다. 조건에 못 미친 달이 하루라도 끼면 그 상은 처음부터 다시 세야 한다.
+   * ========================================================= */
+  const AWARD_VILLAGE_SAT = 72;     // 표창장: 평균 만족도 기준
+  const AWARD_PROGRAM_RATING = 4.0; // 장관상: 이번 달 운영된 프로그램 평균 평점 기준
+  const AWARD_CASE_SAT = 68;        // 장관상: 취약계층 평균 만족도 기준(사례관리 성과 지표로 사용)
+
+  function getAward(id) { return DATA.AWARDS.find(a => a.id === id); }
+
+  function grantAward(id, news) {
+    const def = getAward(id);
+    G.awardCounts[id] = (G.awardCounts[id] || 0) + 1;
+    G.awardScore += def.scoreBonus;
+    G.budget += def.prize;
+    G.totalAwardPrize += def.prize;
+    G.awards.push({ id, turn: G.turn, count: G.awardCounts[id] });
+    const nth = G.awardCounts[id] > 1 ? ` (${G.awardCounts[id]}번째)` : '';
+    addLog('award', `${def.icon} [${def.org}] 「${def.name}」 수상!${nth} 포상금 ${fmtWon(def.prize)} · 점수 +${def.scoreBonus}점`);
+    news.push({ kind: 'award', text: `${def.name} 수상!`, awardId: id });
+  }
+
+  function checkAwards(news) {
+    // 복지마을 선도우수사례 표창장 — 마을 평균 만족도가 계속 좋은 상태인지
+    G.villageGoodStreak = avgSat() >= AWARD_VILLAGE_SAT ? G.villageGoodStreak + 1 : 0;
+    const villageDef = getAward('villageExemplary');
+    if (G.villageGoodStreak >= villageDef.streakMonths) {
+      G.villageGoodStreak = 0;
+      grantAward('villageExemplary', news);
+    }
+
+    // 우수 사회복지 프로그램 보건복지부 장관상 — 이번 달 프로그램 평점 + 취약계층 만족도
+    const ratedThisMonth = G.programs
+      .map(p => p.history[p.history.length - 1])
+      .filter(h => h && h.turn === G.turn);
+    const avgRating = ratedThisMonth.length
+      ? ratedThisMonth.reduce((s, h) => s + h.rating, 0) / ratedThisMonth.length : 0;
+    const caseSat = DATA.VULNERABLE_IDS.reduce((s, g) => s + G.sat[g], 0) / DATA.VULNERABLE_IDS.length;
+    const programOk = ratedThisMonth.length > 0 && avgRating >= AWARD_PROGRAM_RATING && caseSat >= AWARD_CASE_SAT;
+    G.programExcellentStreak = programOk ? G.programExcellentStreak + 1 : 0;
+    const programDef = getAward('programExcellence');
+    if (G.programExcellentStreak >= programDef.streakMonths) {
+      G.programExcellentStreak = 0;
+      grantAward('programExcellence', news);
+    }
+  }
+
   /* ---------- 월 진행 ---------- */
   function nextMonth() {
     if (!G) return;
@@ -775,10 +830,13 @@ const Sim = (() => {
       }
     }
 
-    // 9) 예산 경고
+    // 9) 보건복지부 포상 심사 (평균 만족도·프로그램 평점·사례관리 성과가 계속 좋은지)
+    checkAwards(news);
+
+    // 10) 예산 경고
     if (G.budget < 0) addLog('warn', '🚨 예산이 바닥났습니다! 프로그램을 정리하거나 교부금을 기다려야 합니다.');
 
-    // 10) 목표 달성 체크
+    // 11) 목표 달성 체크
     if (!G.won && totalPop() >= GOAL.pop && avgSat() >= GOAL.sat) {
       G.won = true;
       news.push({ kind: 'win', text: '' });
@@ -818,6 +876,12 @@ const Sim = (() => {
       s.totalDecor = s.totalDecor || 0;
       if (!s.houses) s.houses = [];
       if (!s.mission) s.mission = { active: false, done: false };
+      if (!s.awards) s.awards = [];
+      if (!s.awardCounts) s.awardCounts = {};
+      s.awardScore = s.awardScore || 0;
+      s.totalAwardPrize = s.totalAwardPrize || 0;
+      s.villageGoodStreak = s.villageGoodStreak || 0;
+      s.programExcellentStreak = s.programExcellentStreak || 0;
       return s;
     } catch (e) { return null; }
   }
@@ -839,5 +903,6 @@ const Sim = (() => {
     isRoad, hasRoadAccess, buildRoad, removeRoad,
     getDecorDef, checkDecorSite, placeDecor, removeDecor, decorBeautyBonus,
     setHouses, checkHouseMoveSite, moveHouse,
+    getAward, AWARDS: DATA.AWARDS,
   };
 })();
