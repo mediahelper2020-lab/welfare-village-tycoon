@@ -1170,6 +1170,82 @@ const UI = (() => {
     canvas.onmouseleave = () => render();
   }
 
+  /* ---------- 건물 디자인/색상 선택 ----------
+   * 건물 선택 → 디자인 선택 → 색상 선택 → (main.js가 이어서) 위치 선택 → 미리보기 → 건설 확정.
+   * onConfirm({ style, wall, roof })을 부르면 그다음부터는 기존 배치(고스트) 흐름을 그대로 탄다.
+   */
+  function openBuildCustomize(defId, onConfirm) {
+    const def = Sim.getDef(defId);
+    let chosenStyle = DATA.BUILDING_STYLES[0].id;
+    let chosenWall = DATA.BUILDING_COLORS.wall[0].hex;
+    let chosenRoof = DATA.BUILDING_COLORS.roof[0].hex;
+    const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+
+    function renderStyleStep() {
+      showModal(`
+        <h2>${def.icon} ${esc(def.name)} · 디자인 선택</h2>
+        <p class="lead">마음에 드는 디자인을 골라주세요. (1/2)</p>
+        <div class="styleGrid">
+          ${DATA.BUILDING_STYLES.map(s => `
+            <div class="styleCard ${s.id === chosenStyle ? 'sel' : ''}" data-style="${s.id}">
+              <div class="ic">${s.icon}</div>
+              <div class="nm">${esc(s.name)}</div>
+              <div class="ds">${esc(s.desc)}</div>
+            </div>`).join('')}
+        </div>
+        <div class="modal-actions">
+          <button class="btn ghostb" id="bcCancel">취소</button>
+          <button class="btn primary" id="bcNext">다음 · 색상 선택</button>
+        </div>
+      `, { locked: true });
+      document.querySelectorAll('.styleCard').forEach(card => {
+        card.onclick = () => { chosenStyle = card.dataset.style; renderStyleStep(); };
+      });
+      $('#bcCancel').onclick = closeModal;
+      $('#bcNext').onclick = renderColorStep;
+    }
+
+    function renderColorStep() {
+      showModal(`
+        <h2>${def.icon} ${esc(def.name)} · 색상 선택</h2>
+        <p class="lead">외벽과 지붕 색을 골라주세요. (2/2)</p>
+        <div class="colorSection">
+          <h4>외벽 색</h4>
+          <div class="swatchGrid" id="wallSwatches">
+            ${DATA.BUILDING_COLORS.wall.map(w => `
+              <div class="swatch ${w.hex === chosenWall ? 'sel' : ''}" data-wall="${w.hex}"
+                   style="background:${hex(w.hex)}" title="${esc(w.label)}"></div>`).join('')}
+          </div>
+        </div>
+        <div class="colorSection">
+          <h4>지붕 색</h4>
+          <div class="swatchGrid" id="roofSwatches">
+            ${DATA.BUILDING_COLORS.roof.map(r => `
+              <div class="swatch ${r.hex === chosenRoof ? 'sel' : ''}" data-roof="${r.hex}"
+                   style="background:${hex(r.hex)}" title="${esc(r.label)}"></div>`).join('')}
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn ghostb" id="bcBack">← 디자인 다시 고르기</button>
+          <button class="btn primary" id="bcConfirm">배치할 위치 고르기</button>
+        </div>
+      `, { locked: true });
+      document.querySelectorAll('#wallSwatches .swatch').forEach(sw => {
+        sw.onclick = () => { chosenWall = Number(sw.dataset.wall); renderColorStep(); };
+      });
+      document.querySelectorAll('#roofSwatches .swatch').forEach(sw => {
+        sw.onclick = () => { chosenRoof = Number(sw.dataset.roof); renderColorStep(); };
+      });
+      $('#bcBack').onclick = renderStyleStep;
+      $('#bcConfirm').onclick = () => {
+        closeModal();
+        onConfirm({ style: chosenStyle, wall: chosenWall, roof: chosenRoof });
+      };
+    }
+
+    renderStyleStep();
+  }
+
   /* ---------- 시설 정보 ---------- */
   function openBuildingInfo(instId) {
     const G = Sim.state;
@@ -1424,7 +1500,7 @@ const UI = (() => {
     openPanel, closePanel, rerenderPanel, resetLogFeed,
     showModal, closeModal, isModalOpen,
     showIntro, showVictory, openMenu, openBuildingInfo, openHouseInfo,
-    showMissionStart, showMissionComplete, showAwardModal,
+    showMissionStart, showMissionComplete, showAwardModal, openBuildCustomize,
     showModeHint, hideModeHint, doNextMonth,
   };
 })();

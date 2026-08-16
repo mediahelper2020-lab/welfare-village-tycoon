@@ -154,6 +154,40 @@ DATA.BUILDINGS = [
   },
 ];
 
+/* ---------- 건물 디자인 커스터마이징 ----------
+ * 시설(공원 제외)을 지을 때 디자인과 색상을 직접 고를 수 있다.
+ * style은 world.js의 makeBuildingMesh가 실제 형태를 어떻게 바꿀지 정하고,
+ * wall/roof는 그 위에 입힐 색이다. 건물 인스턴스마다 따로 저장되므로
+ * 같은 종류를 여러 채 지어도 서로 다르게 꾸밀 수 있다.
+ */
+DATA.BUILDING_STYLES = [
+  { id: 'modern', name: '모던형', icon: '🏙️', desc: '깔끔한 사각 매스와 통유리로 이루어진 담백한 디자인.' },
+  { id: 'eco', name: '친환경형', icon: '🌿', desc: '옥상 녹화와 화단을 두른 초록빛 친환경 디자인.' },
+  { id: 'civic', name: '공공기관형', icon: '🏛️', desc: '깃대와 화강암 톤 기단을 갖춘 반듯한 공공기관 디자인.' },
+  { id: 'urban', name: '도시형', icon: '🏢', desc: '층을 높이 쌓아 올린 도시적인 고층 디자인.' },
+  { id: 'warm', name: '따뜻한 복지시설형', icon: '🏡', desc: '박공지붕과 나무 톤 차양이 정겨운 복지시설 디자인.' },
+];
+
+DATA.BUILDING_COLORS = {
+  wall: [
+    { id: 'white', label: '화이트', hex: 0xf5f3ec },
+    { id: 'beige', label: '베이지', hex: 0xe8dcc4 },
+    { id: 'pastelBlue', label: '파스텔 블루', hex: 0xaecbe0 },
+    { id: 'green', label: '그린', hex: 0xb9d1a0 },
+    { id: 'brown', label: '브라운', hex: 0xc2a37e },
+    { id: 'grey', label: '그레이', hex: 0xb9bdc2 },
+    { id: 'coral', label: '코랄', hex: 0xe8b8ab },
+  ],
+  roof: [
+    { id: 'slate', label: '슬레이트', hex: 0x4a5a66 },
+    { id: 'navy', label: '네이비', hex: 0x33506e },
+    { id: 'forest', label: '포레스트', hex: 0x3c6b45 },
+    { id: 'terracotta', label: '테라코타', hex: 0xb35c3f },
+    { id: 'walnut', label: '월넛', hex: 0x6b4a30 },
+    { id: 'charcoal', label: '차콜', hex: 0x3a3a3a },
+  ],
+};
+
 /* ---------- 꾸미기 요소 ----------
  * 시설과 달리 예산에 큰 영향이 없는 소품들. 도로/부지 조건 없이 우리 땅 위 빈자리에 놓는다.
  * kind는 world.js의 makeDecorMesh가 어떤 모양을 그릴지 정한다.

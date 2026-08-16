@@ -307,7 +307,8 @@ const Sim = (() => {
     return { ok: true };
   }
 
-  function build(defId, x, z) {
+  // custom(선택): { style, wall, roof } — 디자인/색상 커스터마이징. 안 주면 시설 기본값으로 렌더링된다.
+  function build(defId, x, z, custom) {
     const def = getDef(defId);
     if (!def) return { ok: false, msg: '알 수 없는 시설입니다.' };
     const site = checkSite(def, x, z);
@@ -315,6 +316,7 @@ const Sim = (() => {
     if (G.budget < def.cost) return { ok: false, msg: `예산이 부족합니다. (필요: ${fmtWon(def.cost)})` };
     const firstCommunityCenter = defId === 'communityCenter' && !hasBuilding('communityCenter');
     const inst = { id: uid('bld'), defId, x, z };
+    if (custom && (custom.style || custom.wall || custom.roof)) inst.custom = custom;
     G.buildings.push(inst);
     G.budget -= def.cost;
     G.totalSpent += def.cost;

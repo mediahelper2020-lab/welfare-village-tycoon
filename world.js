@@ -966,11 +966,15 @@ const World = (() => {
   /* =========================================================
    * 시설 메시
    * ========================================================= */
-  function makeBuildingMesh(def, withLabel = true) {
+  // custom(선택): { style, wall, roof } — 플레이어가 건설 전에 고른 디자인/색상.
+  // 없으면 시설 기본 색(def.baseColor/roofColor)과 모던형으로 그린다.
+  function makeBuildingMesh(def, withLabel = true, custom = null) {
     const g = new THREE.Group();
     const foot = def.size * TILE - 1.0;
     const inner = new THREE.Group();
     g.add(inner);
+    const style = (custom && custom.style) || 'modern';
+    let h = def.height;
 
     if (def.isPark) {
       const lawn = new THREE.Mesh(new THREE.CylinderGeometry(foot * 0.52, foot * 0.54, 0.26, 16),
@@ -991,12 +995,14 @@ const World = (() => {
       inner.add(makeBench(new THREE.Vector3(0.3, 0.26, 1.25), [0, 1]));
       inner.add(makeLamp(new THREE.Vector3(-1.3, 0.26, -1.1)));
     } else {
-      const h = def.height;
-      const wallMat = new THREE.MeshLambertMaterial({ color: def.baseColor });
-      const trimMat = new THREE.MeshLambertMaterial({ color: def.roofColor });
+      if (style === 'urban') h *= 1.3;   // 도시형 — 층을 높이 쌓아 올린다
+      const wall = (custom && custom.wall) || def.baseColor;
+      const roofHex = (custom && custom.roof) || def.roofColor;
+      const wallMat = new THREE.MeshLambertMaterial({ color: wall });
+      const trimMat = new THREE.MeshLambertMaterial({ color: roofHex });
 
       const apron = new THREE.Mesh(new THREE.BoxGeometry(foot + 0.9, 0.22, foot + 0.9),
-        new THREE.MeshLambertMaterial({ color: 0xd6d1c4 }));
+        new THREE.MeshLambertMaterial({ color: style === 'civic' ? 0xc7c3ba : 0xd6d1c4 }));
       apron.position.y = 0.11;
       apron.receiveShadow = true;
       inner.add(apron);
@@ -1076,16 +1082,68 @@ const World = (() => {
         inner.add(unit);
       }
 
-      if (def.size >= 2) {
+      if (def.size >= 2 || style === 'eco') {
         const bed = makeFlowerBed(new THREE.Vector3(-foot * 0.36, 0.2, foot * 0.55));
         bed.scale.multiplyScalar(0.55);
         inner.add(bed);
+      }
+
+      /* ---------- 디자인 프리셋별 추가 요소 ---------- */
+      if (style === 'eco') {
+        // 옥상 녹화 — 지붕 위에 얹은 초록 잔디 패널과 작은 관목
+        const green = new THREE.MeshLambertMaterial({ color: 0x6ea34a });
+        const patch = new THREE.Mesh(new THREE.BoxGeometry(foot * 0.7, 0.1, foot * 0.7), green);
+        patch.position.y = h + 0.62;
+        inner.add(patch);
+        for (let i = 0; i < 3; i++) {
+          const shrub = new THREE.Mesh(new THREE.SphereGeometry(0.18, 7, 6), green);
+          shrub.position.set(lrand(-foot * 0.28, foot * 0.28), h + 0.75, lrand(-foot * 0.28, foot * 0.28));
+          inner.add(shrub);
+        }
+      } else if (style === 'civic') {
+        // 깃대 + 깃발, 입구 양옆 기둥
+        const poleMat = new THREE.MeshLambertMaterial({ color: 0xd9d5c8 });
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 2.3, 6), poleMat);
+        pole.position.set(foot / 2 + 0.7, 1.15, foot / 2 - 0.3);
+        inner.add(pole);
+        const flag = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.36, 0.02),
+          new THREE.MeshLambertMaterial({ color: 0x4d8fd6, side: THREE.DoubleSide }));
+        flag.position.set(foot / 2 + 0.7 + 0.28, 1.95, foot / 2 - 0.3);
+        inner.add(flag);
+        for (const side of [-1, 1]) {
+          const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.9, 0.22), wallMat);
+          pillar.position.set(side * foot * 0.28, 1.1, foot / 2 + 0.4);
+          pillar.castShadow = true;
+          inner.add(pillar);
+        }
+      } else if (style === 'warm') {
+        // 박공(맞배)지붕을 기존 평지붕 위에 얹고, 차양을 나무 톤 목재로 바꾼다
+        const hipMat = new THREE.MeshLambertMaterial({ color: roofHex });
+        const hip = new THREE.Mesh(new THREE.ConeGeometry(foot * 0.62, foot * 0.42, 4), hipMat);
+        hip.rotation.y = Math.PI / 4;
+        hip.position.y = h + 0.56 + foot * 0.21;
+        hip.castShadow = true;
+        inner.add(hip);
+        const woodMat = new THREE.MeshLambertMaterial({ color: 0x8a6440 });
+        const canopyWood = new THREE.Mesh(new THREE.BoxGeometry(foot * 0.5, 0.12, 1.15), woodMat);
+        canopyWood.position.set(0, 1.75, foot / 2 + 0.42);
+        inner.add(canopyWood);
+        for (const side of [-1, 1]) {
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.55, 6), woodMat);
+          post.position.set(side * foot * 0.24, 0.95, foot / 2 + 0.85);
+          inner.add(post);
+        }
+      } else if (style === 'urban') {
+        // 옥상 안테나 — 층수를 높이 쌓은 도시형의 마무리
+        const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 1.1, 6), trimMat);
+        antenna.position.set(foot * 0.2, h + 1.55, foot * 0.1);
+        inner.add(antenna);
       }
     }
 
     if (withLabel) {
       const label = makeLabelSprite(def.icon + ' ' + def.name);
-      label.position.y = (def.isPark ? 2.5 : def.height + 2.1);
+      label.position.y = (def.isPark ? 2.5 : h + 2.1);
       g.add(label);
       g.userData.label = label;
     }
@@ -1182,7 +1240,7 @@ const World = (() => {
       clearDecor(x, z);
       tiles[x][z] = 'building';
     }
-    const g = makeBuildingMesh(def);
+    const g = makeBuildingMesh(def, true, inst.custom);
     const c = tileCenter(inst.x, inst.z, def.size);
     g.position.set(c.x, 0, c.z);
     const facing = roadFacing(inst.x, inst.z, def.size);
@@ -1247,7 +1305,7 @@ const World = (() => {
     if (ghost) { scene.remove(ghost); ghost = null; ghostDef = null; ghostTile = null; }
     if (m.type === 'build' || m.type === 'decor' || m.type === 'movehouse') {
       ghostDef = m.type === 'build' ? Sim.getDef(m.defId) : m.type === 'decor' ? DATA.DECOR.find(d => d.id === m.defId) : null;
-      ghost = m.type === 'build' ? makeBuildingMesh(ghostDef, false)
+      ghost = m.type === 'build' ? makeBuildingMesh(ghostDef, false, m.custom)
         : m.type === 'decor' ? makeDecorMesh(ghostDef)
         : makeHouse(m.wall, m.roof);
       ghost.traverse(o => {

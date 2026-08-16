@@ -7,16 +7,25 @@
 
   const canvas = document.getElementById('scene');
   let pendingBuildDefId = null;
+  let pendingBuildCustom = null;   // { style, wall, roof } — 배치 전에 고른 디자인/색상
   let roadSpent = 0;         // 이번 드래그로 깐 도로 비용 합계
   let decorSpent = 0;        // 이번 드래그로 놓은 꾸미기 비용 합계
 
   /* ---------- 모드 ---------- */
+  // 건물 선택 → (공원이 아니면) 디자인·색상 선택 → 배치(고스트) → 확정
   function startBuild(defId) {
     const def = Sim.getDef(defId);
     if (Sim.state.budget < def.cost) { UI.toast('예산이 부족합니다.', 'err'); return; }
-    pendingBuildDefId = defId;
-    World.setMode({ type: 'build', defId });
     UI.closePanel();
+    if (def.isPark) { enterBuildPlacement(defId, null); return; }
+    UI.openBuildCustomize(defId, (custom) => enterBuildPlacement(defId, custom));
+  }
+
+  function enterBuildPlacement(defId, custom) {
+    const def = Sim.getDef(defId);
+    pendingBuildDefId = defId;
+    pendingBuildCustom = custom;
+    World.setMode({ type: 'build', defId, custom });
     UI.showModeHint(`${def.icon} <b>${def.name}</b> · 도로에 접한 우리 땅을 클릭하세요 · ${Sim.fmtWon(def.cost)}`);
   }
 
@@ -55,6 +64,7 @@
 
   function cancelMode() {
     pendingBuildDefId = null;
+    pendingBuildCustom = null;
     World.setMode({ type: 'none' });
     UI.hideModeHint();
   }
@@ -63,7 +73,7 @@
   function onTileClick(x, z, valid, reason) {
     if (!pendingBuildDefId) return;
     if (!valid) { UI.toast(reason || '이 자리에는 지을 수 없습니다.', 'err'); return; }
-    const r = Sim.build(pendingBuildDefId, x, z);
+    const r = Sim.build(pendingBuildDefId, x, z, pendingBuildCustom);
     if (!r.ok) { UI.toast(r.msg, 'err'); return; }
     World.addBuilding(r.inst);
     UI.sfx.place();
