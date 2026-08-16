@@ -801,7 +801,7 @@ const UI = (() => {
 
     body.innerHTML = `
       <p class="lede">다른 참가자들이 만든 마을과 총점을 겨뤄 보세요.
-        마을 데이터는 서버로 가지 않습니다 — <b>닉네임과 점수 몇 줄</b>만 올라갑니다.</p>
+        마을 데이터는 서버로 가지 않습니다 — <b>이름·소속기관과 점수 몇 줄</b>만 올라갑니다.</p>
 
       <div class="card">
         <div class="row spread" style="align-items:flex-start">
@@ -851,7 +851,7 @@ const UI = (() => {
       <div class="rankrow ${i < 3 ? 'top' + (i + 1) : ''} ${e.id === myEntryId ? 'me' : ''}">
         <span class="rk">${i < 3 ? medal[i] : i + 1}</span>
         <span class="who">
-          <div class="nm">${esc(e.nickname)}${e.id === myEntryId ? ' <span class="chip owned">나</span>' : ''}</div>
+          <div class="nm">${esc(e.nickname)}${e.org ? ` <span class="muted">· ${esc(e.org)}</span>` : ''}${e.id === myEntryId ? ' <span class="chip owned">나</span>' : ''}</div>
           <div class="sub">${esc(e.village)} · 인구 ${Number(e.pop).toLocaleString()}명
             · 만족도 ${Number(e.sat).toFixed(0)}점 · 사례 ${e.closed_cases}건</div>
         </span>
@@ -862,6 +862,7 @@ const UI = (() => {
   function openRankSubmit() {
     const G = Sim.state;
     const nick = store.get('wt_nickname') || '';
+    const org = store.get('wt_org') || '';
     const m = showModal(`
       <h2>🏆 랭킹에 점수 올리기</h2>
       <p class="lead">아래 값이 순위표에 <b>공개</b>됩니다. 마을 세이브와 프로그램 내용은 올라가지 않습니다.</p>
@@ -877,12 +878,16 @@ const UI = (() => {
         <div class="stattile"><div class="k">경과</div><div class="v num">${G.turn}개월</div></div>
       </div>
 
-      <label class="fl"><span>닉네임</span><span class="hint">최대 12자</span></label>
+      <label class="fl"><span>이름</span><span class="hint">최대 12자</span></label>
       <input type="text" id="rkNick" maxlength="12" value="${esc(nick)}"
-             placeholder="예) 복지새내기" autocomplete="off" />
+             placeholder="예) 홍길동" autocomplete="off" />
+
+      <label class="fl" style="margin-top:10px"><span>소속기관</span><span class="hint">최대 20자 · 선택</span></label>
+      <input type="text" id="rkOrg" maxlength="20" value="${esc(org)}"
+             placeholder="예) 행복종합사회복지관" autocomplete="off" />
+
       <p class="muted" style="margin-top:8px">
-        닉네임과 마을 이름은 다른 참가자에게 그대로 보입니다.
-        실명이나 근무지처럼 개인을 알아볼 수 있는 정보는 쓰지 마세요.
+        이름·소속기관·마을 이름은 다른 참가자에게 그대로 공개됩니다.
       </p>
 
       <div class="modal-actions">
@@ -894,13 +899,15 @@ const UI = (() => {
     $('#rkCancel').onclick = closeModal;
     $('#rkGo').onclick = async () => {
       const nickname = $('#rkNick').value.trim();
-      if (!nickname) { toast('닉네임을 입력해 주세요.', 'err'); return; }
+      const orgVal = $('#rkOrg').value.trim();
+      if (!nickname) { toast('이름을 입력해 주세요.', 'err'); return; }
       const btn = $('#rkGo');
       btn.disabled = true;
       btn.textContent = '올리는 중…';
 
       const r = await Leaderboard.submit({
         nickname,
+        org: orgVal || null,
         village: G.village.slice(0, 12),
         score: Sim.score(),
         pop: Sim.totalPop(),
@@ -918,6 +925,7 @@ const UI = (() => {
       const saved = Array.isArray(r.data) ? r.data[0] : r.data;
       if (saved && saved.id) { myEntryId = saved.id; store.set('wt_rank_id', saved.id); }
       store.set('wt_nickname', nickname);
+      store.set('wt_org', orgVal);
       sfx.good();
       closeModal();
       toast('순위표에 등록되었습니다!', 'ok');

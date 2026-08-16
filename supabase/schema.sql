@@ -35,6 +35,18 @@ create table if not exists public.leaderboard (
   constraint leaderboard_months_range check (months       between 0 and 100000)
 );
 
+-- 소속기관 칸 (이름 = 기존 nickname 칸을 그대로 씀).
+-- 이미 만들어진 테이블에도 안전하게 더할 수 있도록 add column if not exists로 씀.
+alter table public.leaderboard add column if not exists org text;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'leaderboard_org_len') then
+    alter table public.leaderboard
+      add constraint leaderboard_org_len check (org is null or char_length(org) <= 20);
+  end if;
+end $$;
+
 -- 순위표 조회(점수 내림차순)를 위한 인덱스
 create index if not exists leaderboard_score_idx
   on public.leaderboard (score desc, created_at asc);

@@ -3,7 +3,7 @@
  *
  * 마을 세이브는 그대로 브라우저(localStorage)에 남는다.
  * 서버로 나가는 것은 랭킹에 필요한 값 몇 개뿐이다.
- *   닉네임 · 마을이름 · 총점 · 인구 · 만족도 · 종결사례 · 경과개월
+ *   이름 · 소속기관 · 마을이름 · 총점 · 인구 · 만족도 · 종결사례 · 경과개월
  *
  * 여기 적힌 anon 키는 브라우저에 노출되는 것을 전제로 설계된 공개 키다.
  * 실제 보호는 테이블의 RLS 정책이 한다 (supabase/schema.sql 참고).
@@ -23,7 +23,7 @@ const Leaderboard = (() => {
   function configure(opts) { Object.assign(CONFIG, opts || {}); }
   function configured() { return !!(CONFIG.url && CONFIG.key); }
 
-  const FIELDS = 'id,nickname,village,score,pop,sat,closed_cases,months,created_at';
+  const FIELDS = 'id,nickname,org,village,score,pop,sat,closed_cases,months,created_at';
 
   function headers(extra) {
     return Object.assign({
