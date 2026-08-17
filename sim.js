@@ -89,6 +89,7 @@ const Sim = (() => {
       totalAwardPrize: 0,  // 포상금 누계
       villageGoodStreak: 0,        // 평균 만족도가 기준을 계속 넘긴 연속 개월 수
       programExcellentStreak: 0,   // 프로그램·사례관리 만족도가 기준을 계속 넘긴 연속 개월 수
+      housingWarned: false,        // 주거공간 부족 경고를 이미 띄웠는지 (여유 생기면 초기화)
       programs: [],        // 프로그램 객체
       cases: [],           // 사례 객체
       closedCases: 0,
@@ -297,6 +298,45 @@ const Sim = (() => {
   function getDef(defId) { return DATA.BUILDINGS.find(b => b.id === defId); }
   function hasBuilding(defId) { return G.buildings.some(b => b.defId === defId); }
 
+  /* ---------- 도시등급 ---------- */
+  function cityTier() {
+    let best = DATA.CITY_TIERS[0];
+    for (const t of DATA.CITY_TIERS) if (totalPop() >= t.pop) best = t;
+    return best;
+  }
+  function nextCityTier() {
+    const cur = cityTier();
+    return DATA.CITY_TIERS.find(t => t.tier === cur.tier + 1) || null;
+  }
+
+  /* ---------- 주거 수용량 ---------- */
+  function housingCapacity() {
+    const houseCap = (G.houses || []).length * DATA.HOUSING.capPerHouse;
+    const aptCap = G.buildings.reduce((s, b) => s + (getDef(b.defId).housingCap || 0), 0);
+    return houseCap + aptCap;
+  }
+  function housingRatio() {
+    const cap = housingCapacity();
+    return cap > 0 ? totalPop() / cap : 1;
+  }
+
+  /* ---------- 해금 조건 ----------
+   * def.unlock = { pop, cityTier, facilityCount } (전부 선택, 모두 만족해야 해금)
+   * 나중에 접근성 점수 등 다른 조건도 이 형식 그대로 추가할 수 있다.
+   */
+  function checkUnlock(def) {
+    if (!def.unlock) return { ok: true, reasons: [] };
+    const u = def.unlock;
+    const reasons = [];
+    if (u.pop && totalPop() < u.pop) reasons.push(`인구 ${u.pop.toLocaleString()}명`);
+    if (u.cityTier && cityTier().tier < u.cityTier) {
+      const t = DATA.CITY_TIERS.find(t => t.tier === u.cityTier);
+      reasons.push(`복지도시 Lv.${u.cityTier}(${t ? t.name : ''})`);
+    }
+    if (u.facilityCount && G.buildings.length < u.facilityCount) reasons.push(`복지기관 ${u.facilityCount}개 이상`);
+    return { ok: reasons.length === 0, reasons };
+  }
+
   // 부지 조건: 우리 땅 + 도로에 접함. (3D 배치 가능 여부는 World가 함께 본다)
   function checkSite(def, x, z) {
     for (let dx = 0; dx < def.size; dx++) for (let dz = 0; dz < def.size; dz++) {
@@ -311,6 +351,8 @@ const Sim = (() => {
   function build(defId, x, z, custom) {
     const def = getDef(defId);
     if (!def) return { ok: false, msg: '알 수 없는 시설입니다.' };
+    const unlock = checkUnlock(def);
+    if (!unlock.ok) return { ok: false, msg: `아직 지을 수 없습니다. 해금 조건: ${unlock.reasons.join(' · ')}` };
     const site = checkSite(def, x, z);
     if (!site.ok) return site;
     if (G.budget < def.cost) return { ok: false, msg: `예산이 부족합니다. (필요: ${fmtWon(def.cost)})` };
@@ -788,12 +830,13 @@ const Sim = (() => {
       addLog('case', `📂 신규 사례 접수: ${c.name}님(${c.age}세, ${DATA.GROUPS[c.group].label})`);
     }
 
-    // 6) 평판 갱신 및 인구 유입
+    // 6) 평판 갱신 및 인구 유입 (주거 수용률이 높으면 유입이 크게 줄어든다)
     const sat = avgSat();
     G.rep = clamp(G.rep + (sat - G.rep) * 0.12, 0, 100);
     if (G.rep >= 45) {
       const inflowBase = (G.rep - 40) / 10;
-      const persons = Math.max(0, Math.round(inflowBase * rnd(1.2, 3.2)));
+      let persons = Math.max(0, Math.round(inflowBase * rnd(1.2, 3.2)));
+      if (housingRatio() >= DATA.HOUSING.squeezeRatio) persons = Math.round(persons * DATA.HOUSING.squeezeFactor);
       if (persons > 0) {
         const vulnerable = Math.round(persons * 0.3);
         const gen = persons - vulnerable;
@@ -804,6 +847,19 @@ const Sim = (() => {
         addLog('move', '🏡 ' + line);
         news.push({ kind: 'move', text: line, count: persons });
       }
+    }
+
+    // 6b) 주거공간 부족 경고 — 넘을 때 한 번만 알리고, 여유가 다시 생기면 재무장한다
+    const hRatio = housingRatio();
+    if (hRatio >= DATA.HOUSING.warnRatio && !G.housingWarned) {
+      G.housingWarned = true;
+      const msg = `주거공간 확충이 필요합니다. 복지마을의 인구가 빠르게 증가하고 있습니다. `
+        + `현재 인구 ${totalPop().toLocaleString()}명 / 최대 수용 인구 ${housingCapacity().toLocaleString()}명. `
+        + `더 많은 주민이 안정적으로 거주할 수 있도록 공공아파트 건설을 검토해 주세요.`;
+      addLog('warn', '🏘️ ' + msg);
+      news.push({ kind: 'housing', text: msg });
+    } else if (hRatio < DATA.HOUSING.warnRatio - 0.1) {
+      G.housingWarned = false;
     }
 
     // 7) 분기 교부금 (3·6·9·12월)
@@ -884,6 +940,7 @@ const Sim = (() => {
       s.totalAwardPrize = s.totalAwardPrize || 0;
       s.villageGoodStreak = s.villageGoodStreak || 0;
       s.programExcellentStreak = s.programExcellentStreak || 0;
+      s.housingWarned = s.housingWarned || false;
       return s;
     } catch (e) { return null; }
   }
@@ -906,5 +963,6 @@ const Sim = (() => {
     getDecorDef, checkDecorSite, placeDecor, removeDecor, decorBeautyBonus,
     setHouses, checkHouseMoveSite, moveHouse,
     getAward, AWARDS: DATA.AWARDS,
+    housingCapacity, housingRatio, cityTier, nextCityTier, checkUnlock,
   };
 })();

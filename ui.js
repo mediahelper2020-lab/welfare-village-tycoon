@@ -92,7 +92,10 @@ const UI = (() => {
     lastBudget = G.budget;
 
     const monthly = Sim.upkeepTotal() + G.programs.filter(p => p.active).reduce((s, p) => s + p.budget, 0);
-    $('#hudUpkeep').innerHTML = `월 고정지출 <b>${fmt(monthly)}</b> · 누적 집행 ${fmt(G.totalSpent)}`;
+    const hCap = Sim.housingCapacity(), hRatio = Sim.housingRatio();
+    const hColor = hRatio >= 0.95 ? 'var(--bad)' : hRatio >= 0.80 ? 'var(--warn)' : 'var(--good)';
+    $('#hudUpkeep').innerHTML = `월 고정지출 <b>${fmt(monthly)}</b> · 누적 집행 ${fmt(G.totalSpent)}<br>
+      🏘️ 주거 수용 <b style="color:${hColor}">${Sim.totalPop().toLocaleString()} / ${hCap.toLocaleString()}명</b> (${Math.round(hRatio * 100)}%)`;
 
     const pop = Sim.totalPop(), sat = Sim.avgSat();
     const sc = Sim.score();
@@ -238,13 +241,35 @@ const UI = (() => {
     <div class="hr"></div>
     <div class="secthead"><span>복지시설</span></div>`;
 
-    for (const def of DATA.BUILDINGS) {
+    const buildingCard = (def) => {
       const built = G.buildings.filter(b => b.defId === def.id).length;
-      const afford = G.budget >= def.cost;
+      const unlock = Sim.checkUnlock(def);
       const tags = [`${def.size}×${def.size}칸`];
       if (def.cap) tags.push(`정원 ${def.cap}명`);
+      if (def.housingCap) tags.push(`수용 +${def.housingCap.toLocaleString()}명`);
       tags.push(`유지비 ${fmt(def.upkeep)}/월`);
-      html += `
+
+      if (!unlock.ok) {
+        let progress = '';
+        if (def.unlock.pop) {
+          const pct = Math.min(100, Math.round(Sim.totalPop() / def.unlock.pop * 100));
+          progress = `<div class="progressline"><i style="width:${pct}%"></i></div>
+            <div class="muted" style="margin-top:5px">인구 ${Sim.totalPop().toLocaleString()} / ${def.unlock.pop.toLocaleString()}명 (${pct}%)</div>`;
+        }
+        return `
+        <div class="card locked">
+          <div class="row spread" style="align-items:flex-start">
+            <h3>🔒 ${def.icon} ${esc(def.name)}</h3>
+            <span class="price">${fmt(def.cost)}</span>
+          </div>
+          <div class="desc">${esc(def.desc)}</div>
+          <div class="muted" style="margin-top:8px">해금 조건: ${unlock.reasons.join(' · ')}</div>
+          ${progress}
+        </div>`;
+      }
+
+      const afford = G.budget >= def.cost;
+      return `
       <div class="card">
         <div class="row spread" style="align-items:flex-start">
           <h3>${def.icon} ${esc(def.name)}${built ? ` <span class="chip owned">보유 ${built}</span>` : ''}</h3>
@@ -257,6 +282,24 @@ const UI = (() => {
             ${afford ? '짓기' : '예산 부족'}</button>
         </div>
       </div>`;
+    };
+
+    const catOf = (def) => def.cat || 'welfare';
+    const welfareDefs = DATA.BUILDINGS.filter(d => catOf(d) === 'welfare');
+    const housingDefs = DATA.BUILDINGS.filter(d => catOf(d) === 'housing');
+    const etcDefs = DATA.BUILDINGS.filter(d => catOf(d) === 'etc');
+
+    html += welfareDefs.map(buildingCard).join('');
+
+    html += `
+    <div class="hr"></div>
+    <div class="secthead"><span>🏘️ 주거시설 · 인구 ${Sim.totalPop().toLocaleString()} / 수용 ${Sim.housingCapacity().toLocaleString()}명</span></div>
+    <p class="muted" style="margin:-4px 0 10px">인구가 늘어날수록 살 곳이 필요합니다. 수용률이 너무 높으면 새로 이사 오는 주민이 크게 줄어듭니다.</p>`;
+    html += housingDefs.map(buildingCard).join('');
+
+    if (etcDefs.length) {
+      html += `<div class="hr"></div><div class="secthead"><span>기타</span></div>`;
+      html += etcDefs.map(buildingCard).join('');
     }
 
     html += `
@@ -955,6 +998,8 @@ const UI = (() => {
     const pop = Sim.totalPop();
     const vulnerable = DATA.VULNERABLE_IDS.reduce((a, g) => a + G.pop[g], 0);
     const startPop = G.history.length ? G.history[0].pop : pop;
+    const tier = Sim.cityTier(), nextTier = Sim.nextCityTier();
+    const hCap = Sim.housingCapacity(), hRatio = Sim.housingRatio();
 
     body.innerHTML = `
       <div class="statgrid">
@@ -962,7 +1007,10 @@ const UI = (() => {
           <div class="k">총점 · 인구 ${pop.toLocaleString()} + 만족도 ${Sim.avgSat().toFixed(0)}×20 + 종결사례 ${G.closedCases}×100${G.awardScore ? ` + 수상 ${G.awardScore.toLocaleString()}` : ''}</div>
           <div class="v num" style="font-size:24px;color:var(--gold)">${Sim.score().toLocaleString()}점</div>
         </div>
+        <div class="stattile"><div class="k">도시등급</div><div class="v num">Lv.${tier.tier} ${esc(tier.name)}</div></div>
+        <div class="stattile"><div class="k">다음 등급까지</div><div class="v num">${nextTier ? `인구 ${(nextTier.pop - pop > 0 ? nextTier.pop - pop : 0).toLocaleString()}명` : '최고 등급'}</div></div>
         <div class="stattile"><div class="k">인구</div><div class="v num">${pop.toLocaleString()}명</div></div>
+        <div class="stattile"><div class="k">주거 수용</div><div class="v num" style="color:${hRatio >= 0.95 ? 'var(--bad)' : hRatio >= 0.80 ? 'var(--warn)' : 'var(--good)'}">${pop.toLocaleString()} / ${hCap.toLocaleString()}명</div></div>
         <div class="stattile"><div class="k">전입 누계</div><div class="v num">+${(pop - startPop).toLocaleString()}명</div></div>
         <div class="stattile"><div class="k">취약계층 비율</div><div class="v num">${(vulnerable / pop * 100).toFixed(0)}%</div></div>
         <div class="stattile"><div class="k">평판</div><div class="v num">${G.rep.toFixed(0)}점</div></div>
@@ -1456,6 +1504,8 @@ const UI = (() => {
       awards.slice(1).forEach(a => toast(`${a.text}`, 'ok'));
       setTimeout(() => showAwardModal(awards[0].awardId), moved ? 300 : 0);
     }
+    const housing = news.find(n => n.kind === 'housing');
+    if (housing) toast(housing.text, 'warn');
     if (Sim.state.won && !wasWon) showVictory();
   }
 

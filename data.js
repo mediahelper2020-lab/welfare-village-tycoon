@@ -31,6 +31,30 @@ DATA.ROAD = {
   refund: 1e6,       // 철거 시 100만 원 환급
 };
 
+/* ---------- 주거 수용량 ----------
+ * 인구가 늘어나도 살 곳이 없으면 더 늘어나기 어렵다. 밸런스 수치는
+ * 여기 한 곳에서만 관리한다 (sim.js에 흩어놓지 않는다).
+ */
+DATA.HOUSING = {
+  capPerHouse: 60,      // 원래 살던 민가 한 채가 수용하는 인구 (시작 인구 500명 · 민가 14채 기준으로
+                         // 시작 수용률이 약 60%가 되도록 잡은 값 — 처음부터 빠듯하지 않게)
+  warnRatio: 0.80,      // 수용률이 이 비율을 넘으면 "주거공간 확충 필요" 경고
+  squeezeRatio: 0.95,   // 이 비율을 넘으면 전입이 크게 줄어듦
+  squeezeFactor: 0.25,  // squeezeRatio 초과 시 전입 인원에 곱하는 배율
+};
+
+/* ---------- 도시등급 ----------
+ * 인구를 기준으로 한 간단한 성장 단계. 해금 조건(unlock.cityTier)과
+ * 통계 패널의 "도시등급" 표시에 쓰인다.
+ */
+DATA.CITY_TIERS = [
+  { tier: 1, name: '작은 마을', pop: 0 },
+  { tier: 2, name: '성장하는 마을', pop: 800 },
+  { tier: 3, name: '복지 소도시', pop: 1800 },
+  { tier: 4, name: '복지 중견도시', pop: 3500 },
+  { tier: 5, name: '복지 광역도시', pop: 6000 },
+];
+
 /* ---------- 주민 그룹 ----------
  * 색은 dataviz 검증기(명도밴드·채도·색각·대비)를 나열 순서까지 포함해 통과한 조합이다.
  * 순서를 바꾸면 인접 색 대비가 달라지므로 다시 검증해야 한다.
@@ -145,12 +169,41 @@ DATA.BUILDINGS = [
     desc: '마을 행사와 축제를 여는 주민들의 사랑방. 어르신이 살던 곳에서 계속 지낼 수 있도록(AIP·Aging In Place) 이웃이 함께 살피는 공동케어회의도 이곳에서 열린다.',
   },
   {
-    id: 'park', name: '마을공원', icon: '🌳',
+    id: 'park', name: '마을공원', icon: '🌳', cat: 'etc',
     cost: 1e8, upkeep: 0.2e7, size: 1, cap: 0, host: false,
     goodFor: ['senior', 'disabled', 'youth', 'basic', 'multicultural', 'defector', 'general'],
     passive: { senior: .3, disabled: .3, youth: .3, basic: .3, multicultural: .3, defector: .3, general: .3 },
     baseColor: 0x88b868, roofColor: 0x88b868, height: 0.4, isPark: true,
     desc: '누구나 쉬어가는 초록 쉼터. 마을 전체 만족도를 조금씩 올린다.',
+  },
+
+  /* ---------- 주거시설 ----------
+   * 인구가 늘어날수록 살 곳이 필요해진다. host:false라 프로그램은 못 열지만,
+   * housingCap만큼 마을의 최대 수용 인구를 늘려준다. 가격 순서를 반드시 지킨다:
+   * 공공아파트 5층 < 빌딩형 공공아파트 < 대단지 공공아파트.
+   */
+  {
+    id: 'apt5', name: '공공아파트 5층', icon: '🏘️', cat: 'housing',
+    cost: 2.5e8, upkeep: 0.6e7, size: 1, cap: 0, host: false, housingCap: 60,
+    goodFor: [], passive: {},
+    baseColor: 0xe8dcc4, roofColor: 0x6b4a30, height: 3.2,
+    desc: '초기 단계에 지을 수 있는 소규모 공공주택. 짓기 쉽고 유지비도 적지만 수용 인원은 많지 않다.',
+  },
+  {
+    id: 'aptBlock', name: '빌딩형 공공아파트', icon: '🏢', cat: 'housing',
+    cost: 9e8, upkeep: 1.8e7, size: 2, cap: 0, host: false, housingCap: 260,
+    goodFor: [], passive: {},
+    baseColor: 0xaecbe0, roofColor: 0x33506e, height: 6.5,
+    desc: '인구가 어느 정도 늘어난 뒤 지을 수 있는 중·고층 주거시설. 부지 대비 수용 효율이 높다.',
+    unlock: { pop: 700 },
+  },
+  {
+    id: 'aptComplex', name: '대단지 공공아파트', icon: '🏙️', cat: 'housing',
+    cost: 2.6e9, upkeep: 4.5e7, size: 2, cap: 0, host: false, housingCap: 700,
+    goodFor: [], passive: {},
+    baseColor: 0xb9bdc2, roofColor: 0x3a3a3a, height: 9.5,
+    desc: '고밀도 도시 단계에서 짓는 대규모 주거단지. 건설비와 유지비가 크지만 수용 인원이 압도적이다.',
+    unlock: { pop: 2000, cityTier: 3 },
   },
 ];
 

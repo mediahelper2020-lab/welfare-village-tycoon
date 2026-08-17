@@ -294,6 +294,8 @@
   .card .desc { color: var(--ink-2); font-size: 12.5px; line-height: 1.62; margin-top: 4px; }
   .card.urgent { border-color: rgba(217,106,106,.45); background: rgba(217,106,106,.07); }
   .card.granted { border-color: rgba(240,198,116,.45); background: rgba(240,198,116,.06); }
+  .card.locked { opacity: .82; }
+  .card.locked h3 { color: var(--ink-2); }
 
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .row.tight { gap: 5px; }
@@ -400,6 +402,7 @@
   @keyframes toastIn { from { opacity: 0; transform: translateY(-14px) scale(.94) } to { opacity: 1; transform: none } }
   .toast.err { border-color: rgba(217,106,106,.6); color: #f5cfcf; background: #2a1a1e; }
   .toast.ok  { border-color: rgba(47,160,127,.6); color: #b6ecd8; background: #14261f; }
+  .toast.warn { border-color: rgba(200,134,47,.6); color: #f2dcb6; background: #2a2013; }
 
   /* ============ 통계 ============ */
   .statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }

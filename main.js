@@ -15,6 +15,8 @@
   // 건물 선택 → (공원이 아니면) 디자인·색상 선택 → 배치(고스트) → 확정
   function startBuild(defId) {
     const def = Sim.getDef(defId);
+    const unlock = Sim.checkUnlock(def);
+    if (!unlock.ok) { UI.toast(`아직 지을 수 없습니다. 해금 조건: ${unlock.reasons.join(' · ')}`, 'err'); return; }
     if (Sim.state.budget < def.cost) { UI.toast('예산이 부족합니다.', 'err'); return; }
     UI.closePanel();
     if (def.isPark) { enterBuildPlacement(defId, null); return; }
