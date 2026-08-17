@@ -181,6 +181,55 @@ DATA.BUILDINGS = [
     baseColor: 0xf0d2a0, roofColor: 0xc85a4a, height: 3.6,
     desc: '마을 행사와 축제를 여는 주민들의 사랑방. 어르신이 살던 곳에서 계속 지낼 수 있도록(AIP·Aging In Place) 이웃이 함께 살피는 공동케어회의도 이곳에서 열린다.',
   },
+  /* ---------- 전문기관 ----------
+   * 마을이 어느 정도 자리를 잡아야(인구·도시등급·기존 기관 수·복지 접근성) 짓기 시작할 수 있는
+   * 특화 전문기관 5종. 기본 12종보다 다루는 문제가 더 전문적이고 예산도 더 크다.
+   */
+  {
+    id: 'childProtect', name: '아동보호전문기관', icon: '🛡️', cat: 'special',
+    cost: 9e8, upkeep: 2.0e7, size: 2, cap: 70, host: true,
+    goodFor: ['youth', 'basic', 'general'],
+    passive: { youth: 1.3, basic: .4, general: .3 },
+    baseColor: 0xdfe8f5, roofColor: 0x3a5a9c, height: 3.8,
+    desc: '아동학대 신고 대응·조사와 피해아동 보호를 전담하는 전문기관. 지역 복지 인프라와 협력해야 하므로 기존 기관이 어느 정도 갖춰져야 한다.',
+    unlock: { pop: 900, facilityCount: 8 },
+  },
+  {
+    id: 'elderProtect', name: '노인보호전문기관', icon: '🚨', cat: 'special',
+    cost: 9e8, upkeep: 2.0e7, size: 2, cap: 70, host: true,
+    goodFor: ['senior'],
+    passive: { senior: 1.3 },
+    baseColor: 0xf0e3c8, roofColor: 0x9c6a2e, height: 3.8,
+    desc: '노인학대 신고 대응·예방교육을 전담하는 전문기관. 마을이 성장하는 궤도에 올라야 운영을 시작할 수 있다.',
+    unlock: { pop: 900, cityTier: 2 },
+  },
+  {
+    id: 'disabledRights', name: '장애인권익옹호기관', icon: '🤝', cat: 'special',
+    cost: 11e8, upkeep: 2.4e7, size: 2, cap: 60, host: true,
+    goodFor: ['disabled'],
+    passive: { disabled: 1.3 },
+    baseColor: 0xe3d8f0, roofColor: 0x6a3a9c, height: 4.0,
+    desc: '장애인 학대·차별 피해자를 지원하고 권익을 옹호하는 전문기관. 마을 전역이 고르게 서비스를 받고 있어야(복지 접근성) 진짜 효과를 낼 수 있다.',
+    unlock: { cityTier: 3, accessScore: 50 },
+  },
+  {
+    id: 'mentalHealth', name: '정신건강복지센터', icon: '🧠', cat: 'special',
+    cost: 13e8, upkeep: 2.8e7, size: 2, cap: 90, host: true,
+    goodFor: ['senior', 'disabled', 'youth', 'basic', 'multicultural', 'defector', 'general'],
+    passive: { senior: .5, disabled: .5, youth: .7, basic: .6, multicultural: .5, defector: .5, general: .5 },
+    baseColor: 0xd8e8e3, roofColor: 0x2e7d6a, height: 4.2,
+    desc: '우울·불안·중독 등 정신건강 문제를 상담·치료로 잇는 전문기관. 대상을 가리지 않지만, 그만큼 탄탄한 도시 기반이 갖춰져야 짓기 시작할 수 있다.',
+    unlock: { cityTier: 3, facilityCount: 14 },
+  },
+  {
+    id: 'multiFamily', name: '다문화가족지원센터', icon: '🌏', cat: 'special',
+    cost: 10e8, upkeep: 2.2e7, size: 2, cap: 75, host: true,
+    goodFor: ['multicultural', 'defector', 'general'],
+    passive: { multicultural: 1.4, defector: 1.2, general: .3 },
+    baseColor: 0xd8e0f0, roofColor: 0x2e5a9c, height: 3.8,
+    desc: '결혼이민자·다문화가정·탈북민의 정착과 자립을 지원하는 전문기관. 도시 규모와 골고루 퍼진 복지 접근성을 함께 갖춰야 문을 열 수 있는, 가장 늦게 해금되는 전문기관이다.',
+    unlock: { cityTier: 4, accessScore: 60 },
+  },
   {
     id: 'park', name: '마을공원', icon: '🌳', cat: 'etc',
     cost: 1e8, upkeep: 0.2e7, size: 1, cap: 0, host: false,

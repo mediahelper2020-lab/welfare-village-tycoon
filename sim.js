@@ -91,6 +91,7 @@ const Sim = (() => {
       programExcellentStreak: 0,   // 프로그램·사례관리 만족도가 기준을 계속 넘긴 연속 개월 수
       housingWarned: false,        // 주거공간 부족 경고를 이미 띄웠는지 (여유 생기면 초기화)
       accessWarned: false,         // 복지사각지대 경고를 이미 띄웠는지 (사각지대 해소되면 초기화)
+      unlockedSeen: [],            // 해금 알림을 이미 띄운 시설 id 목록
       programs: [],        // 프로그램 객체
       cases: [],           // 사례 객체
       closedCases: 0,
@@ -446,6 +447,8 @@ const Sim = (() => {
     const inst = { id: uid('bld'), defId, x, z };
     if (custom && (custom.style || custom.wall || custom.roof)) inst.custom = custom;
     G.buildings.push(inst);
+    // 이미 지은 시설을 두고 뒤늦게 "해금됐다"고 알릴 필요는 없다
+    if (def.unlock && !G.unlockedSeen.includes(defId)) G.unlockedSeen.push(defId);
     G.budget -= def.cost;
     G.totalSpent += def.cost;
     G.rep = clamp(G.rep + 3, 0, 100);
@@ -963,6 +966,17 @@ const Sim = (() => {
       G.accessWarned = false;
     }
 
+    // 6d) 새로 해금된 시설 알림 — 조건을 채운 순간 한 번만 알린다
+    for (const def of DATA.BUILDINGS) {
+      if (!def.unlock || G.unlockedSeen.includes(def.id)) continue;
+      if (checkUnlock(def).ok) {
+        G.unlockedSeen.push(def.id);
+        const msg = `${def.icon} ${def.name}을(를) 지을 수 있게 되었습니다! 건설 메뉴에서 확인해 보세요.`;
+        addLog('unlock', '🔓 ' + msg);
+        news.push({ kind: 'unlock', text: msg, defId: def.id });
+      }
+    }
+
     // 7) 분기 교부금 (3·6·9·12월)
     if (G.month % 3 === 0) {
       const grant = totalPop() * GRANT_PER_CAPITA + Math.round(G.rep * 1e6);
@@ -1043,10 +1057,18 @@ const Sim = (() => {
       s.programExcellentStreak = s.programExcellentStreak || 0;
       s.housingWarned = s.housingWarned || false;
       s.accessWarned = s.accessWarned || false;
+      if (!s.unlockedSeen) s.unlockedSeen = [];
       return s;
     } catch (e) { return null; }
   }
-  function restore(s) { G = s; return G; }
+  function restore(s) {
+    G = s;
+    // 이 기능이 생기기 전 저장본에서 이미 해금돼 있던 시설은 "새로 해금됨" 알림을 다시 띄우지 않는다
+    for (const def of DATA.BUILDINGS) {
+      if (def.unlock && checkUnlock(def).ok && !G.unlockedSeen.includes(def.id)) G.unlockedSeen.push(def.id);
+    }
+    return G;
+  }
   function reset() {
     try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
     G = null;

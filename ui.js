@@ -251,12 +251,27 @@ const UI = (() => {
       tags.push(`유지비 ${fmt(def.upkeep)}/월`);
 
       if (!unlock.ok) {
-        let progress = '';
-        if (def.unlock.pop) {
-          const pct = Math.min(100, Math.round(Sim.totalPop() / def.unlock.pop * 100));
-          progress = `<div class="progressline"><i style="width:${pct}%"></i></div>
-            <div class="muted" style="margin-top:5px">인구 ${Sim.totalPop().toLocaleString()} / ${def.unlock.pop.toLocaleString()}명 (${pct}%)</div>`;
+        const u = def.unlock;
+        const bars = [];
+        if (u.pop) {
+          const pct = Math.min(100, Math.round(Sim.totalPop() / u.pop * 100));
+          bars.push({ pct, label: `인구 ${Sim.totalPop().toLocaleString()} / ${u.pop.toLocaleString()}명` });
         }
+        if (u.cityTier) {
+          const pct = Math.min(100, Math.round(Sim.cityTier().tier / u.cityTier * 100));
+          bars.push({ pct, label: `도시등급 Lv.${Sim.cityTier().tier} / Lv.${u.cityTier}` });
+        }
+        if (u.facilityCount) {
+          const pct = Math.min(100, Math.round(G.buildings.length / u.facilityCount * 100));
+          bars.push({ pct, label: `복지기관 ${G.buildings.length} / ${u.facilityCount}개` });
+        }
+        if (u.accessScore) {
+          const pct = Math.min(100, Math.round(Sim.accessibilityScore() / u.accessScore * 100));
+          bars.push({ pct, label: `복지 접근성 ${Sim.accessibilityScore()} / ${u.accessScore}점` });
+        }
+        const progress = bars.map(b => `
+          <div class="progressline"><i style="width:${b.pct}%"></i></div>
+          <div class="muted" style="margin-top:5px">${b.label} (${b.pct}%)</div>`).join('');
         return `
         <div class="card locked">
           <div class="row spread" style="align-items:flex-start">
@@ -287,10 +302,19 @@ const UI = (() => {
 
     const catOf = (def) => def.cat || 'welfare';
     const welfareDefs = DATA.BUILDINGS.filter(d => catOf(d) === 'welfare');
+    const specialDefs = DATA.BUILDINGS.filter(d => catOf(d) === 'special');
     const housingDefs = DATA.BUILDINGS.filter(d => catOf(d) === 'housing');
     const etcDefs = DATA.BUILDINGS.filter(d => catOf(d) === 'etc');
 
     html += welfareDefs.map(buildingCard).join('');
+
+    const specialUnlocked = specialDefs.filter(d => Sim.checkUnlock(d).ok).length;
+    html += `
+    <div class="hr"></div>
+    <div class="secthead"><span>🎓 전문기관 · ${specialUnlocked}/${specialDefs.length}개 해금</span></div>
+    <p class="muted" style="margin:-4px 0 10px">아동·노인·장애인 학대 대응, 정신건강, 다문화 정착처럼 더 전문적인 문제를 다루는 기관입니다.
+      마을이 자리를 잡아야(인구·도시등급·기존 기관 수·복지 접근성) 하나씩 해금됩니다.</p>`;
+    html += specialDefs.map(buildingCard).join('');
 
     html += `
     <div class="hr"></div>
@@ -1542,6 +1566,8 @@ const UI = (() => {
     if (housing) toast(housing.text, 'warn');
     const access = news.find(n => n.kind === 'access');
     if (access) toast(access.text, 'warn');
+    const unlocks = news.filter(n => n.kind === 'unlock');
+    unlocks.forEach((u, i) => setTimeout(() => { sfx.good(); toast(u.text, 'ok'); }, i * 400));
     if (Sim.state.won && !wasWon) showVictory();
   }
 
