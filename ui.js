@@ -138,6 +138,7 @@ const UI = (() => {
     badge.textContent = nOpen;
 
     if (typeof World !== 'undefined' && World.syncVillagerCount) World.syncVillagerCount(pop);
+    if (typeof World !== 'undefined' && World.refreshHeatmap) World.refreshHeatmap();
     renderLog();
   }
 
@@ -1000,6 +1001,7 @@ const UI = (() => {
     const startPop = G.history.length ? G.history[0].pop : pop;
     const tier = Sim.cityTier(), nextTier = Sim.nextCityTier();
     const hCap = Sim.housingCapacity(), hRatio = Sim.housingRatio();
+    const heatmapOn = !!(World.isHeatmapVisible && World.isHeatmapVisible());
 
     body.innerHTML = `
       <div class="statgrid">
@@ -1061,6 +1063,30 @@ const UI = (() => {
       </div>
 
       <div class="chartbox">
+        <div class="row spread" style="align-items:center">
+          <h4 style="margin-bottom:0">🗺️ 복지 접근성</h4>
+          <button class="btn small ${heatmapOn ? '' : 'ghostb'}" id="heatmapToggleBtn">
+            ${heatmapOn ? '히트맵 끄기' : '지도에 히트맵 표시'}</button>
+        </div>
+        <div class="statgrid" style="margin-top:12px">
+          <div class="stattile"><div class="k">마을 전체 접근성</div><div class="v num">${Sim.accessibilityScore()}점</div></div>
+          <div class="stattile"><div class="k">복지사각지대</div><div class="v num" style="color:${Sim.coldSpots().length ? 'var(--bad)' : 'var(--good)'}">${Sim.coldSpots().length}개 구역</div></div>
+        </div>
+        <p class="muted" style="margin-top:10px">
+          구역(4×4칸)마다 주변 ${DATA.ACCESS.radiusTiles}칸 안의 복지시설 수·거리로 접근성을 매깁니다.
+          시설이 한쪽에 몰리면 다른 구역이 사각지대가 되어 만족도에 손해를 봅니다.
+        </p>
+        ${Sim.coldSpots().length ? `
+        <div class="muted" style="margin-top:6px; font-weight:700">사각지대 구역</div>
+        ${Sim.coldSpots().slice(0, 8).map(z => `
+          <div class="hbar">
+            <span class="lb"><i style="background:var(--bad)"></i>구역 (${z.px},${z.pz})</span>
+            <span class="track"><i style="width:${z.access}%;background:var(--bad)"></i></span>
+            <span class="vv num">${z.access}점</span>
+          </div>`).join('')}` : ''}
+      </div>
+
+      <div class="chartbox">
         <h4>🏛️ 보건복지부 포상</h4>
         ${DATA.AWARDS.map(a => {
           const n = (G.awardCounts || {})[a.id] || 0;
@@ -1079,6 +1105,14 @@ const UI = (() => {
       </div>`;
 
     $('#statTableBtn').onclick = () => { statsAsTable = !statsAsTable; renderStats(); };
+    const heatmapBtn = $('#heatmapToggleBtn');
+    if (heatmapBtn && World.setHeatmapVisible) {
+      heatmapBtn.onclick = () => {
+        sfx.click();
+        World.setHeatmapVisible(!World.isHeatmapVisible());
+        renderStats();
+      };
+    }
 
     if (statsAsTable) {
       const rows = [...G.history].reverse().slice(0, 40).map(h =>
@@ -1506,6 +1540,8 @@ const UI = (() => {
     }
     const housing = news.find(n => n.kind === 'housing');
     if (housing) toast(housing.text, 'warn');
+    const access = news.find(n => n.kind === 'access');
+    if (access) toast(access.text, 'warn');
     if (Sim.state.won && !wasWon) showVictory();
   }
 

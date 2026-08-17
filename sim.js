@@ -90,6 +90,7 @@ const Sim = (() => {
       villageGoodStreak: 0,        // 평균 만족도가 기준을 계속 넘긴 연속 개월 수
       programExcellentStreak: 0,   // 프로그램·사례관리 만족도가 기준을 계속 넘긴 연속 개월 수
       housingWarned: false,        // 주거공간 부족 경고를 이미 띄웠는지 (여유 생기면 초기화)
+      accessWarned: false,         // 복지사각지대 경고를 이미 띄웠는지 (사각지대 해소되면 초기화)
       programs: [],        // 프로그램 객체
       cases: [],           // 사례 객체
       closedCases: 0,
@@ -320,9 +321,93 @@ const Sim = (() => {
     return cap > 0 ? totalPop() / cap : 1;
   }
 
+  /* ---------- 복지 접근성 ----------
+   * 지도를 7×7 구역(파셀)으로 나눠 인구·시설 커버리지를 계산한다.
+   * 인구는 그 구역의 주거 수용량 비중만큼 그 구역에 산다고 가정한다
+   * (민가·아파트가 많은 구역일수록 실제로 사람이 많이 사는 구역으로 취급).
+   */
+  function zoneCenter(px, pz) {
+    const P = DATA.MAP.PARCEL;
+    return [px * P + P / 2, pz * P + P / 2];
+  }
+
+  // 이 구역(px,pz) 안에 있는 주거 수용량 — 건물이 구역 경계에 걸쳐 있으면 겹치는 칸 비율만큼만 센다
+  function zoneHousingCap(px, pz) {
+    let cap = 0;
+    for (const h of (G.houses || [])) {
+      const [hpx, hpz] = parcelOf(h.x, h.z);
+      if (hpx === px && hpz === pz) cap += DATA.HOUSING.capPerHouse;
+    }
+    for (const b of G.buildings) {
+      const def = getDef(b.defId);
+      if (!def.housingCap) continue;
+      const totalTiles = def.size * def.size;
+      let tilesHere = 0;
+      for (let dx = 0; dx < def.size; dx++) for (let dz = 0; dz < def.size; dz++) {
+        const [bpx, bpz] = parcelOf(b.x + dx, b.z + dz);
+        if (bpx === px && bpz === pz) tilesHere++;
+      }
+      if (tilesHere > 0) cap += def.housingCap * (tilesHere / totalTiles);
+    }
+    return cap;
+  }
+
+  // 이 구역의 접근성 점수(0~100) — 반경 안 host 시설들의 거리 감쇠 합, 100점 상한
+  function zoneAccessScore(px, pz) {
+    const [cx, cz] = zoneCenter(px, pz);
+    let score = 0;
+    for (const b of G.buildings) {
+      const def = getDef(b.defId);
+      if (!def.host) continue;
+      const bx = b.x + def.size / 2, bz = b.z + def.size / 2;
+      const dist = Math.hypot(bx - cx, bz - cz);
+      if (dist > DATA.ACCESS.radiusTiles) continue;
+      score += Math.max(0, 1 - dist / DATA.ACCESS.radiusTiles) * 100;
+    }
+    return Math.min(100, Math.round(score));
+  }
+
+  // 우리 구역별 인구·접근성 목록 (보유한 구역만)
+  function zoneList() {
+    const owned = G.parcels.map(k => k.split(',').map(Number));
+    const caps = owned.map(([px, pz]) => zoneHousingCap(px, pz));
+    const totalCap = caps.reduce((s, c) => s + c, 0);
+    const pop = totalPop();
+    return owned.map(([px, pz], i) => {
+      const share = totalCap > 0 ? caps[i] / totalCap : 1 / owned.length;
+      return { px, pz, pop: Math.round(pop * share), access: zoneAccessScore(px, pz) };
+    });
+  }
+
+  // 마을 전체 접근성 점수 — 인구 가중 평균
+  function accessibilityScore() {
+    const zones = zoneList();
+    const pop = totalPop();
+    if (!pop) return 100;
+    return Math.round(zones.reduce((s, z) => s + z.access * z.pop, 0) / pop);
+  }
+
+  // 복지사각지대 — 사람은 사는데 접근성이 기준보다 낮은 구역
+  function coldSpots() {
+    return zoneList().filter(z => z.pop > 0 && z.access < DATA.ACCESS.coldThreshold);
+  }
+
+  // 시설이 특정 구역에 몰려 있는지 — 사각지대와 과밀 구역이 동시에 있으면 불균형으로 본다
+  function isOverConcentrated() {
+    const zones = zoneList().filter(z => z.pop > 0);
+    return zones.some(z => z.access < DATA.ACCESS.coldThreshold) && zones.some(z => z.access >= DATA.ACCESS.goodThreshold);
+  }
+
+  // 접근성이 좋을수록 만족도가 조금씩 오르고, 나쁠수록 조금씩 깎인다 (decorBeautyBonus와 같은 자리에 쓰인다)
+  function accessBonus() {
+    const s = accessibilityScore();
+    return s >= 50
+      ? (s - 50) / 50 * DATA.ACCESS.satBonusMax
+      : (s - 50) / 50 * DATA.ACCESS.satPenaltyMax;
+  }
+
   /* ---------- 해금 조건 ----------
-   * def.unlock = { pop, cityTier, facilityCount } (전부 선택, 모두 만족해야 해금)
-   * 나중에 접근성 점수 등 다른 조건도 이 형식 그대로 추가할 수 있다.
+   * def.unlock = { pop, cityTier, facilityCount, accessScore } (전부 선택, 모두 만족해야 해금)
    */
   function checkUnlock(def) {
     if (!def.unlock) return { ok: true, reasons: [] };
@@ -334,6 +419,7 @@ const Sim = (() => {
       reasons.push(`복지도시 Lv.${u.cityTier}(${t ? t.name : ''})`);
     }
     if (u.facilityCount && G.buildings.length < u.facilityCount) reasons.push(`복지기관 ${u.facilityCount}개 이상`);
+    if (u.accessScore && accessibilityScore() < u.accessScore) reasons.push(`복지 접근성 ${u.accessScore}점 이상`);
     return { ok: reasons.length === 0, reasons };
   }
 
@@ -808,10 +894,11 @@ const Sim = (() => {
       runProgramMonth(p);
     }
 
-    // 3) 만족도 자연 감소(관심이 끊기면 서서히 하락) + 꾸민 마을의 미관 보너스
+    // 3) 만족도 자연 감소(관심이 끊기면 서서히 하락) + 꾸민 마을의 미관 보너스 + 복지 접근성 보너스/페널티
     const beauty = decorBeautyBonus();
+    const access = accessBonus();
     for (const g of DATA.GROUP_IDS) {
-      G.sat[g] = clamp(G.sat[g] - (G.sat[g] > 35 ? 1.0 : 0.3) + beauty, 0, 100);
+      G.sat[g] = clamp(G.sat[g] - (G.sat[g] > 35 ? 1.0 : 0.3) + beauty + access, 0, 100);
     }
 
     // 4) 방치된 사례 악화
@@ -860,6 +947,20 @@ const Sim = (() => {
       news.push({ kind: 'housing', text: msg });
     } else if (hRatio < DATA.HOUSING.warnRatio - 0.1) {
       G.housingWarned = false;
+    }
+
+    // 6c) 복지사각지대 경고 — 시설이 한쪽에 몰려 다른 구역이 소외되면 한 번 알리고,
+    // 균형이 맞춰지면(사각지대가 사라지면) 재무장해서 다음에 또 몰리면 다시 알린다
+    const cold = coldSpots();
+    if (cold.length > 0 && isOverConcentrated() && !G.accessWarned) {
+      G.accessWarned = true;
+      const msg = `복지사각지대 발생 가능성이 있습니다. 현재 복지시설이 특정 구역에 집중되어 있습니다. `
+        + `주민들이 필요한 서비스를 가까운 곳에서 이용할 수 있도록 복지시설을 다른 구역에도 골고루 배치해 주세요. `
+        + `(사각지대 ${cold.length}개 구역 · 마을 전체 접근성 ${accessibilityScore()}점)`;
+      addLog('warn', '🗺️ ' + msg);
+      news.push({ kind: 'access', text: msg });
+    } else if (cold.length === 0) {
+      G.accessWarned = false;
     }
 
     // 7) 분기 교부금 (3·6·9·12월)
@@ -941,6 +1042,7 @@ const Sim = (() => {
       s.villageGoodStreak = s.villageGoodStreak || 0;
       s.programExcellentStreak = s.programExcellentStreak || 0;
       s.housingWarned = s.housingWarned || false;
+      s.accessWarned = s.accessWarned || false;
       return s;
     } catch (e) { return null; }
   }
@@ -964,5 +1066,6 @@ const Sim = (() => {
     setHouses, checkHouseMoveSite, moveHouse,
     getAward, AWARDS: DATA.AWARDS,
     housingCapacity, housingRatio, cityTier, nextCityTier, checkUnlock,
+    zoneList, accessibilityScore, coldSpots, isOverConcentrated,
   };
 })();

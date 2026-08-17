@@ -263,12 +263,14 @@ const World = (() => {
 
   function buildWorld() {
     disposeGroup(terrainGroup); disposeGroup(roadGroup); disposeGroup(parcelGroup);
+    if (heatmapGroup) disposeGroup(heatmapGroup);
     villagers.forEach(v => scene.remove(v));
     Object.values(buildingMeshes).forEach(g => scene.remove(g));
     arrivalFx.forEach(fx => { scene.remove(fx.mesh); fx.mesh.geometry.dispose(); fx.mesh.material.dispose(); });
     celebrants.forEach(v => scene.remove(v));
     villagers = []; buildingMeshes = {}; decorMeshes = {}; roadMeshes = {}; parcelTiles = {};
     celebrants = []; arrivalFx = []; lastSyncedPop = null;
+    heatmapGroup = null; heatmapVisible = false;
 
     terrainGroup = new THREE.Group(); scene.add(terrainGroup);
     roadGroup = new THREE.Group(); scene.add(roadGroup);
@@ -904,6 +906,49 @@ const World = (() => {
       g.userData.parcel = [px, pz];
       parcelGroup.add(g);
       parcelTiles[px + ',' + pz] = g;
+    }
+  }
+
+  /* =========================================================
+   * 복지 접근성 히트맵 — 보유 구역을 접근성 점수에 따라 색칠해서 보여준다
+   * (초록 = 넉넉함, 주황 = 보통, 빨강 = 사각지대). 평소엔 꺼져 있다.
+   * ========================================================= */
+  let heatmapGroup = null;
+  let heatmapVisible = false;
+
+  function setHeatmapVisible(v) {
+    heatmapVisible = v;
+    refreshHeatmap();
+  }
+  function isHeatmapVisible() { return heatmapVisible; }
+
+  function refreshHeatmap() {
+    if (!heatmapGroup) { heatmapGroup = new THREE.Group(); scene.add(heatmapGroup); }
+    disposeGroup(heatmapGroup);
+    heatmapGroup = new THREE.Group();
+    scene.add(heatmapGroup);
+    if (!heatmapVisible || !Sim.state) return;
+
+    const size = PARCEL * TILE;
+    for (const z of Sim.zoneList()) {
+      const color = z.pop === 0 ? null
+        : z.access >= DATA.ACCESS.goodThreshold ? 0x2fa07f
+        : z.access < DATA.ACCESS.coldThreshold ? 0xd96a6a
+        : 0xc8862f;
+      if (color === null) continue;
+      const cx = (z.px * PARCEL + PARCEL / 2) * TILE - HALF;
+      const cz = (z.pz * PARCEL + PARCEL / 2) * TILE - HALF;
+      const tile = new THREE.Mesh(
+        new THREE.PlaneGeometry(size - 0.6, size - 0.6),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, depthWrite: false })
+      );
+      tile.rotation.x = -Math.PI / 2;
+      tile.position.set(cx, 0.32, cz);
+      heatmapGroup.add(tile);
+
+      const label = makeLabelSprite(`${z.access}점`, color);
+      label.position.set(cx, 2.6, cz);
+      heatmapGroup.add(label);
     }
   }
 
@@ -1782,6 +1827,7 @@ const World = (() => {
     canPlaceHouseMove, pickHouseTile, moveHouseMesh,
     addRoad, removeRoadTile, refreshRoads, refreshParcels,
     focusCamera, syncVillagerCount, celebrateArrival,
+    setHeatmapVisible, isHeatmapVisible, refreshHeatmap,
     get GRID() { return GRID; },
     // 읽기 전용 점검용 접근자 (자동화 테스트/디버깅에 사용, 게임 로직에는 영향 없음)
     __debug: {
@@ -1794,6 +1840,8 @@ const World = (() => {
       get villagers() { return villagers; },
       get celebrants() { return celebrants; },
       get arrivalFx() { return arrivalFx; },
+      get heatmapGroup() { return heatmapGroup; },
+      get heatmapVisible() { return heatmapVisible; },
       // 타일 좌표 -> 화면 픽셀 좌표 (자동화 테스트에서 클릭 지점을 계산하는 용도)
       projectTile(x, z) {
         const v = tileCenter(x, z).project(camera);
