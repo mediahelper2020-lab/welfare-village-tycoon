@@ -222,12 +222,12 @@ DATA.BUILDINGS = [
     unlock: { cityTier: 3, facilityCount: 14 },
   },
   {
-    id: 'multiFamily', name: '다문화가족지원센터', icon: '🌏', cat: 'special',
-    cost: 10e8, upkeep: 2.2e7, size: 2, cap: 75, host: true,
-    goodFor: ['multicultural', 'defector', 'general'],
-    passive: { multicultural: 1.4, defector: 1.2, general: .3 },
-    baseColor: 0xd8e0f0, roofColor: 0x2e5a9c, height: 3.8,
-    desc: '결혼이민자·다문화가정·탈북민의 정착과 자립을 지원하는 전문기관. 도시 규모와 골고루 퍼진 복지 접근성을 함께 갖춰야 문을 열 수 있는, 가장 늦게 해금되는 전문기관이다.',
+    id: 'elderlySupport', name: '독거노인종합지원센터', icon: '🧓', cat: 'special',
+    cost: 12e8, upkeep: 2.6e7, size: 2, cap: 85, host: true,
+    goodFor: ['senior'],
+    passive: { senior: 1.5 },
+    baseColor: 0xf0e8d8, roofColor: 0x9c6a2e, height: 4.0,
+    desc: '독거노인의 안부 확인·돌봄·정서지원을 안전망 하나로 통합해 제공하는 종합지원센터. 도시 규모와 골고루 퍼진 복지 접근성을 함께 갖춰야 문을 열 수 있는, 가장 늦게 해금되는 전문기관이다.',
     unlock: { cityTier: 4, accessScore: 60 },
   },
   {
